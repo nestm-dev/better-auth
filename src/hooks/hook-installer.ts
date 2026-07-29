@@ -2,7 +2,7 @@ import { createAuthMiddleware } from "better-auth/api";
 import type { Logger } from "@nestjs/common";
 import { DATABASE_HOOK_MODELS, DATABASE_HOOK_OPERATIONS } from "../better-auth.constants.ts";
 import type { AnyAuth, AuthHookContext } from "../types/auth.types.ts";
-import { BetterAuthHookRegistry } from "./hook-registry.service.ts";
+import { applyContextPatch, BetterAuthHookRegistry } from "./hook-registry.service.ts";
 import { BetterAuthDatabaseHookRegistry } from "./database-hook-registry.service.ts";
 import type { DatabaseHookFn } from "./database-hook-registry.service.ts";
 
@@ -42,21 +42,38 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 /**
  * A `createAuthMiddleware` function invoked with the live dispatch context
  * (which carries better-call's `returnHeaders` flag) resolves to a
- * `{ headers, response }` wrapper instead of the handler's raw return value.
- * Unwrap it so the hook protocol (context-merge vs short-circuit) is applied
- * to what the user's handler actually returned; headers set through `ctx`
- * propagate via the shared context object regardless.
+ * `{ headers, response }` wrapper instead of the handler's raw return value —
+ * and that wrapper is the ONLY channel carrying headers/cookies the user's
+ * middleware set (better-call allocates a fresh Headers per invocation).
+ * Split it so both parts can be propagated.
  */
-function unwrapMiddlewareResult(result: unknown): unknown {
+function splitMiddlewareResult(result: unknown): { response: unknown; headers?: Headers } {
 	if (
 		isPlainObject(result) &&
 		result.headers instanceof Headers &&
 		Object.keys(result).length <= 2 &&
 		("response" in result || Object.keys(result).length === 1)
 	) {
-		return (result as { response?: unknown }).response;
+		return { response: (result as { response?: unknown }).response, headers: result.headers };
 	}
-	return result;
+	return { response: result };
+}
+
+/**
+ * Replays headers from a nested middleware invocation into the dispatcher's
+ * own `ctx.responseHeaders` accumulator, which better-auth merges into the
+ * final response. `Set-Cookie` is appended (multi-value), everything else set.
+ */
+function mergeIntoResponseHeaders(ctx: AuthHookContext, headers: Headers | undefined): void {
+	if (!headers) return;
+	const target = (ctx as { responseHeaders?: Headers }).responseHeaders;
+	if (!(target instanceof Headers)) return;
+	headers.forEach((value, key) => {
+		if (key.toLowerCase() !== "set-cookie") target.set(key, value);
+	});
+	for (const cookie of headers.getSetCookie()) {
+		target.append("set-cookie", cookie);
+	}
 }
 
 function buildDispatchers(
@@ -68,24 +85,40 @@ function buildDispatchers(
 		before: createAuthMiddleware(async (ctx) => {
 			let initialContext: Record<string, unknown> | undefined;
 			if (userBefore) {
-				const result = unwrapMiddlewareResult(await userBefore(ctx as AuthHookContext));
-				if (isPlainObject(result)) {
-					if ("context" in result) {
+				const { response, headers } = splitMiddlewareResult(
+					await userBefore(ctx as AuthHookContext),
+				);
+				mergeIntoResponseHeaders(ctx as AuthHookContext, headers);
+				if (isPlainObject(response)) {
+					if ("context" in response) {
 						// The user's hook asked for a context merge: apply it and
 						// keep going so decorator hooks still run.
-						initialContext = result.context as Record<string, unknown>;
-						Object.assign(ctx as unknown as Record<string, unknown>, initialContext);
+						initialContext = response.context as Record<string, unknown>;
+						applyContextPatch(ctx, initialContext);
 					} else {
 						// Any other truthy object short-circuits the endpoint.
-						return result;
+						return response;
 					}
 				}
 			}
 			return slot.hooks.runBefore(ctx as AuthHookContext, initialContext);
 		}),
 		after: createAuthMiddleware(async (ctx) => {
-			if (userAfter) await userAfter(ctx as AuthHookContext);
-			return slot.hooks.runAfter(ctx as AuthHookContext);
+			let userResponse: unknown;
+			if (userAfter) {
+				const { response, headers } = splitMiddlewareResult(
+					await userAfter(ctx as AuthHookContext),
+				);
+				mergeIntoResponseHeaders(ctx as AuthHookContext, headers);
+				if (response !== undefined) {
+					// Replay better-auth's own after-hook semantics for the
+					// consumer's middleware: a defined return replaces `returned`.
+					(ctx.context as { returned?: unknown }).returned = response;
+					userResponse = response;
+				}
+			}
+			const decoratorResponse = await slot.hooks.runAfter(ctx as AuthHookContext);
+			return decoratorResponse !== undefined ? decoratorResponse : userResponse;
 		}),
 	};
 }
@@ -93,9 +126,7 @@ function buildDispatchers(
 function assertDatabaseHooksUsable(
 	options: MutableAuthOptions,
 	databaseHooks: BetterAuthDatabaseHookRegistry,
-): asserts options is MutableAuthOptions & {
-	databaseHooks: NonNullable<MutableAuthOptions["databaseHooks"]>;
-} {
+): void {
 	if (!options.databaseHooks && databaseHooks.size > 0) {
 		throw new Error(
 			"@DatabaseHook providers were found, but the better-auth instance was created without " +

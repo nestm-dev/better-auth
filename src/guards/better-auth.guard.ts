@@ -12,6 +12,7 @@ import {
 	RequireActiveOrg,
 	Roles,
 	UserHasPermission,
+	type AllowAnonymousOptions,
 	type PermissionCheckOptions,
 } from "../decorators/access-control.decorators.ts";
 import {
@@ -51,17 +52,52 @@ export class BetterAuthGuard implements CanActivate {
 		@Inject(BETTER_AUTH_INSTANCE) private readonly auth: AnyAuth,
 	) {}
 
+	/**
+	 * A class-level `@AllowAnonymous`/`@OptionalAuth` must not silently defeat
+	 * a handler that declares its own authorization requirements — explicit
+	 * handler-level authz wins over an inherited public marker (fail closed).
+	 */
+	private handlerDeclaresAuthorization(handler: Parameters<Reflector["get"]>[1]): boolean {
+		return (
+			this.reflector.get(Roles, handler) !== undefined ||
+			this.reflector.get(OrgRoles, handler) !== undefined ||
+			this.reflector.get(RequireActiveOrg, handler) !== undefined ||
+			this.reflector.get(UserHasPermission, handler) !== undefined ||
+			this.reflector.get(MemberHasPermission, handler) !== undefined
+		);
+	}
+
 	async canActivate(context: ExecutionContext): Promise<boolean> {
-		const targets = [context.getHandler(), context.getClass()];
-		const anonymous = this.reflector.getAllAndOverride(AllowAnonymous, targets);
+		const handler = context.getHandler();
+		const targets = [handler, context.getClass()];
+		let anonymous: AllowAnonymousOptions | undefined = this.reflector.getAllAndOverride(
+			AllowAnonymous,
+			targets,
+		);
+		let optional: true | undefined = this.reflector.getAllAndOverride(OptionalAuth, targets);
+		if (
+			(anonymous || optional) &&
+			this.reflector.get(AllowAnonymous, handler) === undefined &&
+			this.reflector.get(OptionalAuth, handler) === undefined &&
+			this.handlerDeclaresAuthorization(handler)
+		) {
+			anonymous = undefined;
+			optional = undefined;
+		}
 		const kind = resolveContextKind(context);
 		const request = await getRequestFromContext(context);
+		// A WS "request" is the long-lived socket client and an RPC context has
+		// no per-request object either — caching the session verdict there
+		// would keep a revoked session authorized for the connection lifetime.
+		const cacheable = kind === "http" || kind === "graphql";
 
 		if (anonymous && !anonymous.resolveSession) {
 			// Perf: public route — never hit the auth backend.
 			if (request) {
-				request.session ??= null;
-				request.user ??= null;
+				if (cacheable) {
+					request.session ??= null;
+					request.user ??= null;
+				}
 				request[SESSION_RESOLVED] = true;
 			}
 			return true;
@@ -69,7 +105,7 @@ export class BetterAuthGuard implements CanActivate {
 
 		const headers = fromNodeHeaders(request?.headers ?? request?.handshake?.headers ?? {});
 		let session: GuardSession | null;
-		if (request?.[SESSION_RESOLVED]) {
+		if (cacheable && request?.[SESSION_RESOLVED]) {
 			// Idempotency: APP_GUARD + @UseGuards on the same route must not double-fetch.
 			session = (request.session ?? null) as GuardSession | null;
 		} else {
@@ -84,7 +120,7 @@ export class BetterAuthGuard implements CanActivate {
 		if (anonymous) return true;
 
 		if (!session) {
-			if (this.reflector.getAllAndOverride(OptionalAuth, targets)) return true;
+			if (optional) return true;
 			throw await createAuthError(kind, "UNAUTHORIZED");
 		}
 
@@ -177,13 +213,15 @@ export class BetterAuthGuard implements CanActivate {
 		}
 		let success = false;
 		try {
-			const result = (await (fn as (input: unknown) => Promise<unknown>)({
-				body: {
-					permissions: options.permissions,
-					...(options.role ? { role: options.role } : {}),
-				},
-				headers,
-			})) as { success?: boolean } | null;
+			// With an explicit `role`, omit the session headers: better-auth
+			// prefers the session user over `body.role`, which would silently
+			// evaluate the caller's own role instead of the requested one.
+			const input = options.role
+				? { body: { permissions: options.permissions, role: options.role } }
+				: { body: { permissions: options.permissions }, headers };
+			const result = (await (fn as (input: unknown) => Promise<unknown>)(input)) as {
+				success?: boolean;
+			} | null;
 			success = result?.success === true;
 		} catch (error) {
 			this.logger.warn(

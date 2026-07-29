@@ -48,10 +48,19 @@ export class BetterAuthMountService {
 			return;
 		}
 
+		const basePath = this.basePath;
+		if (basePath === "/") {
+			// A root mount would route EVERY request into better-auth's handler
+			// (whose router 404s anything it doesn't know), killing all
+			// application routes. Fail loudly instead of breaking silently.
+			throw new Error(
+				"Better Auth cannot be mounted at '/'. Configure a sub-path (e.g. basePath: '/api/auth' " +
+					"or a baseURL whose pathname is a sub-path).",
+			);
+		}
 		const handler = toNodeHandler(this.auth);
 		const cors = resolveCorsHandler(this.auth, this.options, this.logger);
 		const wrap = this.options.middleware;
-		const basePath = this.basePath;
 
 		httpAdapter.use(
 			(req: AdapterRequest, res: AdapterResponse, next: (error?: unknown) => void) => {

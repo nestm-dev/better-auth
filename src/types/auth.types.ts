@@ -2,12 +2,22 @@ import type { Auth, BetterAuthOptions } from "better-auth";
 import type { createAuthMiddleware } from "better-auth/api";
 
 /**
- * Any better-auth instance, regardless of plugin/options generics. Used
- * internally wherever the module must accept an instance it cannot know the
- * exact plugin surface of.
+ * Any better-auth instance, regardless of plugin/options generics. This is a
+ * structural supertype rather than `Auth<any>`: the `api` endpoints have
+ * contravariant parameters, so `Auth<Concrete>` (e.g. with required
+ * `user.additionalFields`) is NOT assignable to `Auth<any>` — but it is
+ * assignable to this shape.
  */
-// oxlint-disable-next-line typescript/no-explicit-any -- deliberate: accepts any plugin configuration
-export type AnyAuth = Auth<any>;
+// oxlint-disable typescript/no-explicit-any -- deliberate: opaque plugin surface
+export type AnyAuth = {
+	handler: (request: Request) => Promise<Response>;
+	api: Record<string, any>;
+	options: any;
+	$context: Promise<any>;
+	$Infer: { Session: any };
+	$ERROR_CODES: any;
+};
+// oxlint-enable typescript/no-explicit-any
 
 /**
  * Application-level type registry. Augment it once in your app and every

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { io, type Socket } from "socket.io-client";
+import request from "supertest";
 import type { INestApplication } from "@nestjs/common";
 import { createTestAuth } from "../shared/test-auth.ts";
 import { createTestApp } from "../shared/test-app.ts";
@@ -107,6 +108,23 @@ describe(`websocket auth (${testHttpAdapter})`, () => {
 	it("rejects an invalid bearer token", async () => {
 		const socket = connect(port, "not-a-real-token");
 		sockets.push(socket);
+		const error = await expectException(socket, "whoami");
+		expect(JSON.stringify(error)).toContain("UNAUTHORIZED");
+	});
+
+	it("re-validates the session per message: a revoked session stops authorizing", async () => {
+		const user = await signUpUser(app);
+		const socket = connect(port, user.token);
+		sockets.push(socket);
+
+		const first = (await emitWithAck(socket, "whoami")) as { email: string };
+		expect(first.email).toBe(user.email);
+
+		const signOut = await request(app.getHttpServer())
+			.post("/api/auth/sign-out")
+			.set({ Authorization: `Bearer ${user.token}` });
+		expect(signOut.status).toBe(200);
+
 		const error = await expectException(socket, "whoami");
 		expect(JSON.stringify(error)).toContain("UNAUTHORIZED");
 	});

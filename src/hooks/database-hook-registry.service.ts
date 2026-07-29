@@ -44,7 +44,9 @@ function nodeKey(
 export class BetterAuthDatabaseHookRegistry {
 	private readonly logger = new Logger("BetterAuthDatabaseHooks");
 	private readonly nodes = new Map<string, StoredDatabaseHookEntry[]>();
-	private readonly seen = new Set<string>();
+	// Dedupe on class identity (not name — two distinct classes may share one).
+	// oxlint-disable-next-line typescript/no-unsafe-function-type
+	private readonly seen = new Map<Function, Set<string>>();
 	private seq = 0;
 
 	register(
@@ -53,15 +55,17 @@ export class BetterAuthDatabaseHookRegistry {
 		phase: DatabaseHookPhase,
 		entry: DatabaseHookEntry,
 	): void {
-		const dedupeKey = `${nodeKey(model, operation, phase)}:${entry.source.metatype.name}:${entry.source.methodName}`;
-		if (this.seen.has(dedupeKey)) {
+		const methods = this.seen.get(entry.source.metatype) ?? new Set<string>();
+		const dedupeKey = `${nodeKey(model, operation, phase)}:${entry.source.methodName}`;
+		if (methods.has(dedupeKey)) {
 			this.logger.warn(
 				`Duplicate database-hook registration ignored: ${entry.source.metatype.name}#${entry.source.methodName} ` +
 					`is provided by more than one module; it will run once.`,
 			);
 			return;
 		}
-		this.seen.add(dedupeKey);
+		methods.add(dedupeKey);
+		this.seen.set(entry.source.metatype, methods);
 		const key = nodeKey(model, operation, phase);
 		const list = this.nodes.get(key) ?? [];
 		list.push({ ...entry, seq: this.seq++ });

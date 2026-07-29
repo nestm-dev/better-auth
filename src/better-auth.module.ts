@@ -89,15 +89,18 @@ export class BetterAuthModule
 	}
 
 	/**
-	 * The mount must happen here: `configure()` is the only lifecycle point
-	 * that runs after the adapter's middleware layer is initialized but before
-	 * controller routes are registered.
+	 * Kept as a NestModule so Nest treats the module as middleware-aware; the
+	 * actual mount happens in onModuleInit — which runs after
+	 * MiddlewareConsumer middleware registration, so consumer-registered
+	 * middleware (request-context, logging, ...) still executes for auth
+	 * routes, while remaining ahead of the 404/exception layer.
 	 */
 	configure(_consumer: MiddlewareConsumer): void {
-		this.mountService.mount();
+		// intentionally empty — see onModuleInit
 	}
 
 	async onModuleInit(): Promise<void> {
+		this.mountService.mount();
 		this.hookDiscovery.scan();
 		await installHookDispatchers(this.auth, this.hooks, this.databaseHooks, this.logger);
 	}

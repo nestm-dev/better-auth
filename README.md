@@ -102,15 +102,15 @@ BetterAuthModule.forRootAsync({
 
 ### Module options
 
-| Option               | Mode   | Description                                                                                                                 |
-| -------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------- |
-| `auth`               | option | Pre-built `betterAuth()` instance (best type inference).                                                                    |
-| `options`            | option | Raw `BetterAuthOptions`; the module calls `betterAuth()` itself and pre-seeds `hooks`/`databaseHooks`.                      |
-| `basePath`           | option | Override the mount path. Default mirrors better-auth: path inside `baseURL` → `BETTER_AUTH_URL` → `basePath` → `/api/auth`. |
-| `cors`               | option | `false` to disable, or `{ origin, credentials, methods, allowedHeaders, maxAge }`. Defaults to array `trustedOrigins`.      |
-| `middleware`         | option | `(req, res, run) => …` wrapper around the auth handler — for MikroORM `RequestContext` / AsyncLocalStorage setups.          |
-| `isGlobal`           | extra  | Default `true`.                                                                                                             |
-| `disableGlobalGuard` | extra  | Skip the automatic `APP_GUARD` registration.                                                                                |
+| Option               | Mode   | Description                                                                                                                                                                                                                                                                                                          |
+| -------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auth`               | option | Pre-built `betterAuth()` instance (best type inference).                                                                                                                                                                                                                                                             |
+| `options`            | option | Raw `BetterAuthOptions`; the module calls `betterAuth()` itself and pre-seeds `hooks`/`databaseHooks`.                                                                                                                                                                                                               |
+| `basePath`           | option | Override the mount path only (for edge cases like proxy rewrites) — better-auth's router still uses its own config, so to actually move the endpoints set better-auth's `basePath`/`baseURL`. Default mirrors better-auth: path inside `baseURL` → (`BETTER_AUTH_URL` when no `baseURL`) → `basePath` → `/api/auth`. |
+| `cors`               | option | `false` to disable, or `{ origin, credentials, methods, allowedHeaders, maxAge }`. Defaults to array `trustedOrigins`.                                                                                                                                                                                               |
+| `middleware`         | option | `(req, res, run) => …` wrapper around the auth handler — for MikroORM `RequestContext` / AsyncLocalStorage setups.                                                                                                                                                                                                   |
+| `isGlobal`           | extra  | Default `true`.                                                                                                                                                                                                                                                                                                      |
+| `disableGlobalGuard` | extra  | Skip the automatic `APP_GUARD` registration.                                                                                                                                                                                                                                                                         |
 
 ## Guard & decorators
 
@@ -153,6 +153,9 @@ Notes:
   `@Session()` populated.
 - `@Roles` and `@OrgRoles` are deliberately separate domains: an organization owner does not
   pass `@Roles('admin')`.
+- Authorization is fail-closed: a class-level `@AllowAnonymous`/`@OptionalAuth` is ignored on
+  handlers that declare their own `@Roles`/`@OrgRoles`/`@RequireActiveOrg`/permission
+  requirements (a handler-level `@AllowAnonymous` still wins).
 - WebSocket gateways need `@UseGuards(BetterAuthGuard)` explicitly (Nest's `APP_GUARD` does
   not cover gateways). The guard understands http, ws, and rpc contexts; GraphQL is wired but
   currently **experimental** (the `@nestjs/graphql` v12-compatible stack is not yet stable).
@@ -212,8 +215,11 @@ export class UsersModule {}
 Semantics (mirroring better-auth exactly):
 
 - Before hooks run sequentially (your `options.hooks`/instance hooks first, then decorator
-  hooks by `order`); returning `{ context }` merges, any other object short-circuits the
-  endpoint, `APIError` aborts.
+  hooks by `order`); returning `{ context }` deep-merges, any other object short-circuits the
+  endpoint, `APIError` aborts. Headers/cookies set by your own `options.hooks` middleware are
+  preserved.
+- After hooks: a defined return value replaces the response; a thrown `APIError` becomes the
+  response without aborting the remaining after hooks.
 - Database before-hooks fold `{ data }` returns and abort on `false`.
 - Hooks also fire for server-side `auth.api.*` calls, and your hooks run before plugin hooks.
 - **Instance mode + `@DatabaseHook`**: better-auth captures `databaseHooks` at init, so the
@@ -275,8 +281,16 @@ instead.
 
 ## Limitations
 
-- Auth routes bypass the Nest pipeline: global guards, interceptors, and exception filters do
-  not run for `/api/auth/*`. Customize via better-auth hooks instead.
+- Auth routes bypass Nest's router pipeline: guards, interceptors, and exception filters do
+  not run for `/api/auth/*` (functional/`MiddlewareConsumer` middleware **does** run).
+  Customize via better-auth hooks instead.
+- Root mounting (`basePath: '/'`) is rejected at bootstrap — it would swallow every
+  application route.
+- With `isGlobal: false`, other modules' `onModuleInit` hooks may run before the auth mount
+  and hook installation complete; don't call your own auth endpoints from `onModuleInit`.
+- Sharing one `auth` instance across two _concurrently live_ Nest apps is unsupported (hook
+  dispatch follows the most recently initialized app); sequential apps — e.g. repeated
+  testing modules — are fully supported.
 - On Fastify, responses for auth routes are written to the raw socket — Fastify `onResponse`
   hooks and reply-based logging do not observe them.
 - GraphQL context support is wired but untested against Nest 12 (upstream `@nestjs/graphql`
@@ -293,6 +307,7 @@ instead.
 | `AuthGuard`                          | `BetterAuthGuard`                                                       |
 | `@Public()` / `@AllowAnonymous()`    | Same names; `@Optional()` alias removed — use `@OptionalAuth()`         |
 | `@Hook()` classes needed `hooks: {}` | No pre-declaration needed                                               |
+| `disableGlobalAuthGuard`             | `disableGlobalGuard`                                                    |
 | `disableTrustedOriginsCors: true`    | `cors: false`                                                           |
 | `disableControllers`                 | Removed (nothing to disable — mount is always on; guard is toggleable)  |
 | `bodyParser.*` options               | Removed — Nest's own body parsing applies; `rawBody: true` for webhooks |
