@@ -1,8 +1,10 @@
 name: Release
 
+# Dormant while the package is local-testing only: switch to
+# `push: { branches: [main] }` when ready to publish (also configure npm
+# trusted publishing for @nestm/better-auth first).
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write

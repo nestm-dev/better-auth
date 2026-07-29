@@ -1,4 +1,4 @@
-# @concepta/nestjs-better-auth
+# @nestm/better-auth
 
 [Better Auth](https://better-auth.com) integration for **NestJS 12** — ESM-only, Express & Fastify.
 
@@ -33,7 +33,7 @@
 ## Install
 
 ```bash
-pnpm add @concepta/nestjs-better-auth better-auth
+pnpm add @nestm/better-auth better-auth
 ```
 
 ## Quick start
@@ -52,7 +52,7 @@ export const auth = betterAuth({
 ```ts
 // app.module.ts
 import { Module } from "@nestjs/common";
-import { BetterAuthModule } from "@concepta/nestjs-better-auth";
+import { BetterAuthModule } from "@nestm/better-auth";
 import { auth } from "./auth.js";
 
 @Module({
@@ -231,7 +231,7 @@ Semantics (mirroring better-auth exactly):
 
 ```ts
 // Once, app-wide (recommended):
-declare module "@concepta/nestjs-better-auth" {
+declare module "@nestm/better-auth" {
 	interface BetterAuthTypeRegistry {
 		auth: typeof auth; // or InferAuth<typeof authOptions> in options mode
 	}
@@ -315,4 +315,4 @@ instead.
 
 ## License
 
-BSD-3-Clause © Concepta
+BSD-3-Clause © nestm

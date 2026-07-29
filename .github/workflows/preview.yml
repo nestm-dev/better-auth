@@ -1,9 +1,9 @@
 name: Preview release
 
+# Dormant until the pkg.pr.new GitHub app is installed on nestm-dev; then
+# restore `push: { branches: [main] }` + `pull_request:` triggers.
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   preview:

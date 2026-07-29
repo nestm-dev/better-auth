@@ -10,7 +10,7 @@
 		"start": "pnpm run build && node dist/main.js"
 	},
 	"dependencies": {
-		"@concepta/nestjs-better-auth": "file:../..",
+		"@nestm/better-auth": "file:../..",
 		"@nestjs/common": "12.0.0-alpha.5",
 		"@nestjs/core": "12.0.0-alpha.5",
 		"@nestjs/platform-express": "12.0.0-alpha.5",

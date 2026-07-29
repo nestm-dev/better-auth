@@ -8,9 +8,6 @@ importers:
 
   .:
     dependencies:
-      '@concepta/nestjs-better-auth':
-        specifier: file:../..
-        version: file:../..(@nestjs/common@12.0.0-alpha.5(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.0.0-alpha.5)(better-auth@1.6.25)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@nestjs/common':
         specifier: 12.0.0-alpha.5
         version: 12.0.0-alpha.5(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -20,6 +17,9 @@ importers:
       '@nestjs/platform-express':
         specifier: 12.0.0-alpha.5
         version: 12.0.0-alpha.5(@nestjs/common@12.0.0-alpha.5(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.0.0-alpha.5)
+      '@nestm/better-auth':
+        specifier: file:../..
+        version: file:../..(@nestjs/common@12.0.0-alpha.5(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.0.0-alpha.5)(better-auth@1.6.25)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       better-auth:
         specifier: 1.6.25
         version: 1.6.25
@@ -121,23 +121,6 @@ packages:
   '@borewit/text-codec@0.2.2':
     resolution: {integrity: sha512-DDaRehssg1aNrH4+2hnj1B7vnUGEjU6OIlyRdkMd0aUdIUvKXrJfXsy8LVtXAy7DRvYVluWbMspsRhz2lcW0mQ==}
 
-  '@concepta/nestjs-better-auth@file:../..':
-    resolution: {directory: ../.., type: directory}
-    engines: {node: '>=22.12.0'}
-    peerDependencies:
-      '@nestjs/common': ^12.0.0-alpha.5
-      '@nestjs/core': ^12.0.0-alpha.5
-      '@nestjs/graphql': ^13.0.0 || ^14.0.0
-      '@nestjs/websockets': ^12.0.0-alpha.5
-      better-auth: '>=1.6.0 <2.0.0'
-      reflect-metadata: ^0.2.2
-      rxjs: ^7.8.0
-    peerDependenciesMeta:
-      '@nestjs/graphql':
-        optional: true
-      '@nestjs/websockets':
-        optional: true
-
   '@lukeed/csprng@1.1.0':
     resolution: {integrity: sha512-Z7C/xXCiGWsg0KuKsHTKJxbWhpI3Vs5GwLfOean7MGyVFGqdRgBbAjOCh6u4bbjPc/8MJ2pZmK/0DLdCbivLDA==}
     engines: {node: '>=8'}
@@ -178,6 +161,23 @@ packages:
     peerDependencies:
       '@nestjs/common': ^11.0.0
       '@nestjs/core': ^11.0.0
+
+  '@nestm/better-auth@file:../..':
+    resolution: {directory: ../.., type: directory}
+    engines: {node: '>=22.12.0'}
+    peerDependencies:
+      '@nestjs/common': ^12.0.0-alpha.5
+      '@nestjs/core': ^12.0.0-alpha.5
+      '@nestjs/graphql': ^13.0.0 || ^14.0.0
+      '@nestjs/websockets': ^12.0.0-alpha.5
+      better-auth: '>=1.6.0 <2.0.0'
+      reflect-metadata: ^0.2.2
+      rxjs: ^7.8.0
+    peerDependenciesMeta:
+      '@nestjs/graphql':
+        optional: true
+      '@nestjs/websockets':
+        optional: true
 
   '@noble/ciphers@2.2.0':
     resolution: {integrity: sha512-Z6pjIZ/8IJcCGzb2S/0Px5J81yij85xASuk1teLNeg75bfT07MV3a/O2Mtn1I2se43k3lkVEcFaR10N4cgQcZA==}
@@ -732,14 +732,6 @@ snapshots:
 
   '@borewit/text-codec@0.2.2': {}
 
-  '@concepta/nestjs-better-auth@file:../..(@nestjs/common@12.0.0-alpha.5(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.0.0-alpha.5)(better-auth@1.6.25)(reflect-metadata@0.2.2)(rxjs@7.8.2)':
-    dependencies:
-      '@nestjs/common': 12.0.0-alpha.5(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@nestjs/core': 12.0.0-alpha.5(@nestjs/common@12.0.0-alpha.5(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@12.0.0-alpha.5)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      better-auth: 1.6.25
-      reflect-metadata: 0.2.2
-      rxjs: 7.8.2
-
   '@lukeed/csprng@1.1.0': {}
 
   '@nestjs/common@12.0.0-alpha.5(reflect-metadata@0.2.2)(rxjs@7.8.2)':
@@ -779,6 +771,14 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - supports-color
+
+  '@nestm/better-auth@file:../..(@nestjs/common@12.0.0-alpha.5(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.0.0-alpha.5)(better-auth@1.6.25)(reflect-metadata@0.2.2)(rxjs@7.8.2)':
+    dependencies:
+      '@nestjs/common': 12.0.0-alpha.5(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/core': 12.0.0-alpha.5(@nestjs/common@12.0.0-alpha.5(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@12.0.0-alpha.5)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      better-auth: 1.6.25
+      reflect-metadata: 0.2.2
+      rxjs: 7.8.2
 
   '@noble/ciphers@2.2.0': {}
 

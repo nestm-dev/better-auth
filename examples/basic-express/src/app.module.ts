@@ -1,5 +1,5 @@
 import { Module } from "@nestjs/common";
-import { BetterAuthModule } from "@concepta/nestjs-better-auth";
+import { BetterAuthModule } from "@nestm/better-auth";
 import { auth } from "./auth.js";
 import { AppController } from "./app.controller.js";
 

@@ -1,16 +1,16 @@
 {
-	"name": "@concepta/nestjs-better-auth",
+	"name": "@nestm/better-auth",
 	"version": "0.1.0-alpha.0",
 	"description": "Better Auth integration for NestJS 12 (ESM)",
 	"license": "BSD-3-Clause",
-	"author": "Concepta",
+	"author": "nestm",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/conceptadev/nestjs-better-auth.git"
+		"url": "git+https://github.com/nestm-dev/better-auth.git"
 	},
-	"homepage": "https://github.com/conceptadev/nestjs-better-auth#readme",
+	"homepage": "https://github.com/nestm-dev/better-auth#readme",
 	"bugs": {
-		"url": "https://github.com/conceptadev/nestjs-better-auth/issues"
+		"url": "https://github.com/nestm-dev/better-auth/issues"
 	},
 	"keywords": [
 		"nestjs",
@@ -19,7 +19,7 @@
 		"auth",
 		"authentication",
 		"esm",
-		"concepta"
+		"nestm"
 	],
 	"type": "module",
 	"sideEffects": false,

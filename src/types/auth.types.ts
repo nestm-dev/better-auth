@@ -25,7 +25,7 @@ export type AnyAuth = {
  * `BetterAuthService`, ...) becomes plugin-aware without repeating generics:
  *
  * ```ts
- * declare module "@concepta/nestjs-better-auth" {
+ * declare module "@nestm/better-auth" {
  *   interface BetterAuthTypeRegistry {
  *     auth: AppAuth;
  *   }

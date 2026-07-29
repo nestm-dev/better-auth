@@ -5,7 +5,7 @@ import {
 	OptionalAuth,
 	Session,
 	type UserSession,
-} from "@concepta/nestjs-better-auth";
+} from "@nestm/better-auth";
 import type { auth } from "./auth.js";
 
 type AppSession = UserSession<typeof auth>;
