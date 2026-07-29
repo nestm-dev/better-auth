@@ -1,15 +1,16 @@
 name: Release
 
-# Dormant while the package is local-testing only: switch to
-# `push: { branches: [main] }` when ready to publish (also configure npm
-# trusted publishing for @nestm/better-auth first).
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: write
   pull-requests: write
   id-token: write
+
+concurrency: release-${{ github.ref }}
 
 jobs:
   release:
@@ -23,11 +24,22 @@ jobs:
       - uses: actions/setup-node@v5
         with: { node-version: 24, cache: pnpm }
       - run: pnpm install --frozen-lockfile
-      # npm >= 11.5.1 is required for trusted publishing.
+      # Don't publish what doesn't pass: quick gate in addition to CI.
+      - run: pnpm run check
+      - run: pnpm run test:express
+      # Trusted publishing + automatic provenance require npm >= 11.5.1.
       - run: npm install -g npm@latest
-      - uses: changesets/action@v1
+      - name: Create release PR or publish to npm
+        uses: changesets/action@v1
         with:
+          # With pending changesets: opens/updates the "Version Packages" PR.
+          # When that PR is merged (no pending changesets left): publishes to
+          # npm via OIDC trusted publishing (provenance automatic) and creates
+          # the GitHub Release from the changelog.
           publish: pnpm run release
           version: pnpm changeset version
+          title: "chore: release @nestm/better-auth"
+          commit: "chore: release @nestm/better-auth"
+          createGithubReleases: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
