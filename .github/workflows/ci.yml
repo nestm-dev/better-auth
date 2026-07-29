@@ -42,7 +42,7 @@ jobs:
               throw new Error('decorator metadata missing from build output');
             }
           "
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with: { name: dist, path: dist }
 
   test:
