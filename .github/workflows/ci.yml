@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint
+      - run: pnpm run format:check
+      - run: pnpm run typecheck
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - run: pnpm dlx publint --strict
+      - run: pnpm dlx @arethetypeswrong/cli --pack . --profile esm-only
+      # Guards the silent-decorator-metadata-loss class of bundler bug.
+      - run: |
+          node -e "
+            const source = require('node:fs').readFileSync('dist/index.mjs', 'utf8');
+            if (!source.includes('design:paramtypes')) {
+              throw new Error('decorator metadata missing from build output');
+            }
+          "
+      - uses: actions/upload-artifact@v4
+        with: { name: dist, path: dist }
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+        adapter: [express, fastify]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with: { node-version: "${{ matrix.node }}", cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run test:${{ matrix.adapter }}
+        env: { CI: "true" }
+
+  # Non-blocking early warnings: next Nest alpha, better-auth RC, Node current.
+  canary:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: nest-next
+            command: pnpm up "@nestjs/*@next" && pnpm run test:express
+          - name: better-auth-rc
+            command: pnpm up better-auth@rc && pnpm run test:express
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --no-frozen-lockfile
+      - run: ${{ matrix.command }}
+
+  # Detects when the Nest 12 alphas fix their ^11 sibling peers: emits a
+  # warning annotation the day a plain `npm install` starts succeeding, so the
+  # ERESOLVE workarounds (pnpm-workspace.yaml, README, example) can be removed.
+  npm-peer-smoke:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    steps:
+      - uses: actions/setup-node@v5
+        with: { node-version: 24 }
+      - run: |
+          mkdir smoke && cd smoke && npm init -y > /dev/null
+          if npm install @nestjs/common@next @nestjs/core@next @nestjs/platform-express@next reflect-metadata rxjs --no-audit --no-fund; then
+            echo "::warning::Nest 12 alpha sibling peers appear FIXED — remove the ERESOLVE workarounds (pnpm-workspace.yaml, README, examples/basic-express)."
+          else
+            echo "npm ERESOLVE still present (expected while Nest 12 alphas declare ^11 sibling peers)."
+          fi

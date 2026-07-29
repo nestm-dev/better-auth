@@ -1,0 +1,33 @@
+name: Release
+
+# Dormant while the package is local-testing only: switch to
+# `push: { branches: [main] }` when ready to publish (also configure npm
+# trusted publishing for @nestm/better-auth first).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with: { fetch-depth: 0 }
+      - uses: pnpm/action-setup@v4
+      # NOTE: never set `registry-url` here — it writes an _authToken line to
+      # .npmrc that defeats npm trusted publishing (OIDC).
+      - uses: actions/setup-node@v5
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      # npm >= 11.5.1 is required for trusted publishing.
+      - run: npm install -g npm@latest
+      - uses: changesets/action@v1
+        with:
+          publish: pnpm run release
+          version: pnpm changeset version
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

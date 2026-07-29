@@ -1,0 +1,87 @@
+import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
+import { HttpAdapterHost } from "@nestjs/core";
+import { toNodeHandler } from "better-auth/node";
+import {
+	BETTER_AUTH_BASE_PATH,
+	BETTER_AUTH_INSTANCE,
+	BETTER_AUTH_MODULE_OPTIONS,
+} from "../better-auth.tokens.ts";
+import type { BetterAuthModuleOptions } from "../interfaces/better-auth-module-options.interface.ts";
+import type { AnyAuth } from "../types/auth.types.ts";
+import { recoverBody } from "./body-recovery.ts";
+import { resolveCorsHandler } from "./cors.ts";
+import {
+	getNodeRequest,
+	getNodeResponse,
+	matchesBasePath,
+	type AdapterRequest,
+	type AdapterResponse,
+} from "./request-utils.ts";
+
+/**
+ * Mounts the better-auth Node handler as a raw, basePath-scoped adapter
+ * middleware. A raw `use()` mount is invisible to Nest's router, so global
+ * prefixes and versioning never affect it, and auth routes bypass the Nest
+ * pipeline entirely (guards/interceptors/filters do not run for them).
+ */
+@Injectable()
+export class BetterAuthMountService {
+	private readonly logger = new Logger("BetterAuthModule");
+	private mounted = false;
+
+	constructor(
+		// Union/optional param types erase to Object in design:paramtypes, so
+		// the token must be explicit here.
+		@Optional() @Inject(HttpAdapterHost) private readonly adapterHost: HttpAdapterHost | undefined,
+		@Inject(BETTER_AUTH_INSTANCE) private readonly auth: AnyAuth,
+		@Inject(BETTER_AUTH_MODULE_OPTIONS) private readonly options: BetterAuthModuleOptions,
+		@Inject(BETTER_AUTH_BASE_PATH) private readonly basePath: string,
+	) {}
+
+	mount(): void {
+		if (this.mounted) return;
+		const httpAdapter = this.adapterHost?.httpAdapter;
+		if (!httpAdapter) {
+			this.logger.warn(
+				"No HTTP adapter available (application context?) — the Better Auth handler was not mounted.",
+			);
+			return;
+		}
+
+		const basePath = this.basePath;
+		if (basePath === "/") {
+			// A root mount would route EVERY request into better-auth's handler
+			// (whose router 404s anything it doesn't know), killing all
+			// application routes. Fail loudly instead of breaking silently.
+			throw new Error(
+				"Better Auth cannot be mounted at '/'. Configure a sub-path (e.g. basePath: '/api/auth' " +
+					"or a baseURL whose pathname is a sub-path).",
+			);
+		}
+		const handler = toNodeHandler(this.auth);
+		const cors = resolveCorsHandler(this.auth, this.options, this.logger);
+		const wrap = this.options.middleware;
+
+		httpAdapter.use(
+			(req: AdapterRequest, res: AdapterResponse, next: (error?: unknown) => void) => {
+				if (!matchesBasePath(req, basePath)) {
+					next();
+					return;
+				}
+				const nodeReq = getNodeRequest(req);
+				const nodeRes = getNodeResponse(res);
+				if (cors?.(nodeReq, nodeRes)) return;
+				recoverBody(req, nodeReq);
+				const run = () => handler(nodeReq, nodeRes);
+				try {
+					const result = wrap ? wrap(req, res, run) : run();
+					void Promise.resolve(result).catch((error: unknown) => next(error));
+				} catch (error) {
+					next(error);
+				}
+			},
+		);
+		this.mounted = true;
+		this.logger.log(`Better Auth mounted at '${basePath}'`);
+	}
+}
