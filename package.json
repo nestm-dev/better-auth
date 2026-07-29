@@ -1,0 +1,112 @@
+{
+	"name": "@concepta/nestjs-better-auth",
+	"version": "0.1.0-alpha.0",
+	"description": "Better Auth integration for NestJS 12 (ESM)",
+	"license": "BSD-3-Clause",
+	"author": "Concepta",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/conceptadev/nestjs-better-auth.git"
+	},
+	"homepage": "https://github.com/conceptadev/nestjs-better-auth#readme",
+	"bugs": {
+		"url": "https://github.com/conceptadev/nestjs-better-auth/issues"
+	},
+	"keywords": [
+		"nestjs",
+		"nestjs-12",
+		"better-auth",
+		"auth",
+		"authentication",
+		"esm",
+		"concepta"
+	],
+	"type": "module",
+	"sideEffects": false,
+	"engines": {
+		"node": ">=22.12.0"
+	},
+	"packageManager": "pnpm@11.18.0",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.mts",
+			"import": "./dist/index.mjs",
+			"default": "./dist/index.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"dist",
+		"README.md",
+		"LICENSE"
+	],
+	"publishConfig": {
+		"access": "public",
+		"provenance": true
+	},
+	"scripts": {
+		"build": "tsdown",
+		"build:tsc": "tsc -p tsconfig.build.json",
+		"typecheck": "tsc --noEmit",
+		"lint": "oxlint --type-aware",
+		"lint:fix": "oxlint --fix",
+		"format": "prettier --write .",
+		"format:check": "prettier --check .",
+		"check": "pnpm run lint && pnpm run format:check && pnpm run typecheck",
+		"test": "pnpm run test:express && pnpm run test:fastify",
+		"test:express": "cross-env TEST_HTTP_ADAPTER=express vitest run",
+		"test:fastify": "cross-env TEST_HTTP_ADAPTER=fastify vitest run",
+		"test:watch": "vitest",
+		"test:coverage": "vitest run --coverage",
+		"verify:pack": "pnpm run build && publint --strict",
+		"prepack": "pnpm run build",
+		"changeset": "changeset",
+		"release": "changeset publish"
+	},
+	"peerDependencies": {
+		"@nestjs/common": "^12.0.0-alpha.5",
+		"@nestjs/core": "^12.0.0-alpha.5",
+		"@nestjs/graphql": "^13.0.0 || ^14.0.0",
+		"@nestjs/websockets": "^12.0.0-alpha.5",
+		"better-auth": ">=1.6.0 <2.0.0",
+		"reflect-metadata": "^0.2.2",
+		"rxjs": "^7.8.0"
+	},
+	"peerDependenciesMeta": {
+		"@nestjs/graphql": {
+			"optional": true
+		},
+		"@nestjs/websockets": {
+			"optional": true
+		}
+	},
+	"devDependencies": {
+		"@changesets/cli": "2.31.1",
+		"@nestjs/common": "12.0.0-alpha.5",
+		"@nestjs/core": "12.0.0-alpha.5",
+		"@nestjs/platform-express": "12.0.0-alpha.5",
+		"@nestjs/platform-fastify": "12.0.0-alpha.5",
+		"@nestjs/platform-socket.io": "12.0.0-alpha.5",
+		"@nestjs/testing": "12.0.0-alpha.5",
+		"@nestjs/websockets": "12.0.0-alpha.5",
+		"@types/node": "26.1.2",
+		"@types/supertest": "7.2.1",
+		"@vitest/coverage-v8": "4.1.10",
+		"better-auth": "1.6.25",
+		"cross-env": "10.1.0",
+		"fastify": "5.10.0",
+		"oxlint": "1.76.0",
+		"oxlint-tsgolint": "^7.0.2001",
+		"prettier": "3.9.6",
+		"publint": "0.3.22",
+		"reflect-metadata": "0.2.2",
+		"rxjs": "7.8.2",
+		"socket.io": "4.8.3",
+		"socket.io-client": "4.8.3",
+		"supertest": "7.2.2",
+		"tsdown": "0.22.14",
+		"typescript": "6.0.2",
+		"vitest": "4.1.10"
+	}
+}

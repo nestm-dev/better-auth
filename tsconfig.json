@@ -1,0 +1,27 @@
+{
+	"compilerOptions": {
+		"module": "nodenext",
+		"moduleResolution": "nodenext",
+		"target": "es2023",
+		"lib": ["es2023"],
+		"types": ["node"],
+
+		"experimentalDecorators": true,
+		"emitDecoratorMetadata": true,
+
+		"strict": true,
+		"noUncheckedIndexedAccess": true,
+		"exactOptionalPropertyTypes": false,
+		"noImplicitOverride": true,
+		"noFallthroughCasesInSwitch": true,
+		"verbatimModuleSyntax": false,
+		"isolatedModules": true,
+		"skipLibCheck": true,
+
+		"allowImportingTsExtensions": true,
+		"rewriteRelativeImportExtensions": true,
+		"noEmit": true,
+		"declaration": true
+	},
+	"include": ["src", "tests", "*.config.ts"]
+}
