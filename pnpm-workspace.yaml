@@ -13,3 +13,9 @@ peerDependencyRules:
 # @nestjs/core's postinstall is only a donation banner; never run it.
 allowBuilds:
   "@nestjs/core": false
+
+# `changeset publish` shells out to `pnpm publish`, and pnpm ignores
+# package.json's publishConfig.provenance — setting it here takes pnpm's
+# explicit-provenance branch, making a failed attestation a HARD publish
+# error instead of a silent "Skipped setting provenance" warning.
+provenance: true

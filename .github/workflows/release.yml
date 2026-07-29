@@ -15,27 +15,43 @@ concurrency: release-${{ github.ref }}
 jobs:
   release:
     runs-on: ubuntu-latest
+    # The npm trusted publisher for @nestm/better-auth is bound to this
+    # environment, which ties the provenance attestation to it.
+    environment: release
     steps:
       - uses: actions/checkout@v5
         with: { fetch-depth: 0 }
       - uses: pnpm/action-setup@v4
-      # NOTE: never set `registry-url` here — it writes an _authToken line to
-      # .npmrc that defeats npm trusted publishing (OIDC).
+      # NOTE: never set `registry-url` on setup-node — it writes an _authToken
+      # line to .npmrc that defeats npm trusted publishing (OIDC).
       - uses: actions/setup-node@v5
         with: { node-version: 24, cache: pnpm }
+      # `changeset publish` shells out to `pnpm publish` (not the npm CLI), so
+      # OIDC trusted publishing comes from pnpm's native implementation —
+      # which requires pnpm >= 11.11 (11.0.x had a broken OIDC exchange).
+      # packageManager pins 11.18.0; this guard catches accidental downgrades.
+      - name: Assert pnpm supports native OIDC publishing
+        run: |
+          node -e '
+            const [major, minor] = require("child_process")
+              .execSync("pnpm --version").toString().trim().split(".").map(Number);
+            if (major < 11 || (major === 11 && minor < 11)) {
+              throw new Error("pnpm >= 11.11 required for OIDC trusted publishing");
+            }
+          '
       - run: pnpm install --frozen-lockfile
-      # Don't publish what doesn't pass: quick gate in addition to CI.
+      # Don't publish what doesn't pass: full both-adapter gate before release.
       - run: pnpm run check
-      - run: pnpm run test:express
-      # Trusted publishing + automatic provenance require npm >= 11.5.1.
-      - run: npm install -g npm@latest
+      - run: pnpm run test
       - name: Create release PR or publish to npm
+        id: changesets
         uses: changesets/action@v1
         with:
           # With pending changesets: opens/updates the "Version Packages" PR.
           # When that PR is merged (no pending changesets left): publishes to
-          # npm via OIDC trusted publishing (provenance automatic) and creates
-          # the GitHub Release from the changelog.
+          # npm via pnpm's OIDC trusted publishing (provenance enforced via
+          # pnpm-workspace.yaml `provenance: true`) and creates the GitHub
+          # Release from the changelog.
           publish: pnpm run release
           version: pnpm changeset version
           title: "chore: release @nestm/better-auth"
@@ -43,3 +59,14 @@ jobs:
           createGithubReleases: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # `changeset publish` pushes tags only after a successful npm publish;
+      # if the run dies between the two, the tag would be lost. Idempotent
+      # reconciliation: tag whatever version npm already has.
+      - name: Reconcile git tag with npm
+        if: always()
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="@nestm/better-auth@$VERSION"
+          if npm view "@nestm/better-auth@$VERSION" version > /dev/null 2>&1; then
+            git tag "$TAG" 2> /dev/null && git push origin "$TAG" || true
+          fi

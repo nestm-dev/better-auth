@@ -6,3 +6,4 @@ references
 examples/**/dist
 examples/**/node_modules
 CHANGELOG.md
+.changeset/
