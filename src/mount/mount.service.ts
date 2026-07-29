@@ -26,7 +26,9 @@ export class BetterAuthMountService {
 	private mounted = false;
 
 	constructor(
-		@Optional() private readonly adapterHost: HttpAdapterHost | undefined,
+		// Union/optional param types erase to Object in design:paramtypes, so
+		// the token must be explicit here.
+		@Optional() @Inject(HttpAdapterHost) private readonly adapterHost: HttpAdapterHost | undefined,
 		@Inject(BETTER_AUTH_INSTANCE) private readonly auth: AnyAuth,
 		@Inject(BETTER_AUTH_MODULE_OPTIONS) private readonly options: BetterAuthModuleOptions,
 		@Inject(BETTER_AUTH_BASE_PATH) private readonly basePath: string,
