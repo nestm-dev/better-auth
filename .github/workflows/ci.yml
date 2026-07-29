@@ -81,3 +81,20 @@ jobs:
         with: { node-version: 24, cache: pnpm }
       - run: pnpm install --no-frozen-lockfile
       - run: ${{ matrix.command }}
+
+  # Detects when the Nest 12 alphas fix their ^11 sibling peers: emits a
+  # warning annotation the day a plain `npm install` starts succeeding, so the
+  # ERESOLVE workarounds (pnpm-workspace.yaml, README, example) can be removed.
+  npm-peer-smoke:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    steps:
+      - uses: actions/setup-node@v5
+        with: { node-version: 24 }
+      - run: |
+          mkdir smoke && cd smoke && npm init -y > /dev/null
+          if npm install @nestjs/common@next @nestjs/core@next @nestjs/platform-express@next reflect-metadata rxjs --no-audit --no-fund; then
+            echo "::warning::Nest 12 alpha sibling peers appear FIXED — remove the ERESOLVE workarounds (pnpm-workspace.yaml, README, examples/basic-express)."
+          else
+            echo "npm ERESOLVE still present (expected while Nest 12 alphas declare ^11 sibling peers)."
+          fi

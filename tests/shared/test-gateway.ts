@@ -1,4 +1,4 @@
-import { UseGuards } from "@nestjs/common";
+import { Injectable, Scope, UseGuards } from "@nestjs/common";
 import {
 	MessageBody,
 	ConnectedSocket,
@@ -30,5 +30,16 @@ export class TestGateway {
 	@OptionalAuth()
 	optionalPing(@ConnectedSocket() client: SessionSocket): { authenticated: boolean } {
 		return { authenticated: !!client.session };
+	}
+}
+
+/** Request-scoped gateways are new in Nest 12 — the guard must work there too. */
+@WebSocketGateway()
+@Injectable({ scope: Scope.REQUEST })
+@UseGuards(BetterAuthGuard)
+export class RequestScopedGateway {
+	@SubscribeMessage("scoped-whoami")
+	scopedWhoami(@ConnectedSocket() client: SessionSocket): { email: string | undefined } {
+		return { email: client.session?.user?.email };
 	}
 }

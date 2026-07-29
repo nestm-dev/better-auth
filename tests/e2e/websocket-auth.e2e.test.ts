@@ -5,7 +5,7 @@ import type { INestApplication } from "@nestjs/common";
 import { createTestAuth } from "../shared/test-auth.ts";
 import { createTestApp } from "../shared/test-app.ts";
 import { signUpUser } from "../shared/auth-client.ts";
-import { TestGateway } from "../shared/test-gateway.ts";
+import { RequestScopedGateway, TestGateway } from "../shared/test-gateway.ts";
 import { testHttpAdapter } from "../shared/http-adapter.ts";
 
 function connect(port: number, token?: string): Socket {
@@ -57,7 +57,7 @@ describe(`websocket auth (${testHttpAdapter})`, () => {
 	beforeAll(async () => {
 		app = await createTestApp({
 			forRoot: { auth: createTestAuth() },
-			metadata: { providers: [TestGateway] },
+			metadata: { providers: [TestGateway, RequestScopedGateway] },
 		});
 		await app.listen(0);
 		const address = app.getHttpServer().address();
@@ -109,6 +109,18 @@ describe(`websocket auth (${testHttpAdapter})`, () => {
 		const socket = connect(port, "not-a-real-token");
 		sockets.push(socket);
 		const error = await expectException(socket, "whoami");
+		expect(JSON.stringify(error)).toContain("UNAUTHORIZED");
+	});
+
+	it("guards request-scoped gateways (new in Nest 12)", async () => {
+		const authed = connect(port, token);
+		sockets.push(authed);
+		const response = (await emitWithAck(authed, "scoped-whoami")) as { email: string };
+		expect(response.email).toBe(email);
+
+		const anonymous = connect(port);
+		sockets.push(anonymous);
+		const error = await expectException(anonymous, "scoped-whoami");
 		expect(JSON.stringify(error)).toContain("UNAUTHORIZED");
 	});
 
