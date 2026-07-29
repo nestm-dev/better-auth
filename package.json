@@ -47,6 +47,7 @@
 	},
 	"scripts": {
 		"build": "tsdown",
+		"build:watch": "tsdown --watch src",
 		"build:tsc": "tsc -p tsconfig.build.json",
 		"typecheck": "tsc --noEmit",
 		"lint": "oxlint --type-aware",
