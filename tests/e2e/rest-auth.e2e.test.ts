@@ -84,9 +84,7 @@ describe(`rest auth (${testHttpAdapter})`, () => {
 		expect(anonymous.body).toEqual({ authenticated: false });
 
 		const user = await signUpUser(app);
-		const authed = await request(app.getHttpServer())
-			.get("/test/optional")
-			.set(bearer(user.token));
+		const authed = await request(app.getHttpServer()).get("/test/optional").set(bearer(user.token));
 		expect(authed.body).toEqual({ authenticated: true });
 	});
 
@@ -101,9 +99,7 @@ describe(`rest auth (${testHttpAdapter})`, () => {
 
 	it("@Roles denies a regular user and allows an admin", async () => {
 		const user = await signUpUser(app);
-		const denied = await request(app.getHttpServer())
-			.get("/test/admin")
-			.set(bearer(user.token));
+		const denied = await request(app.getHttpServer()).get("/test/admin").set(bearer(user.token));
 		expect(denied.status).toBe(403);
 
 		const adminUser = await signUpUser(app);

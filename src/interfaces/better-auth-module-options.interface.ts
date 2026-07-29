@@ -45,8 +45,9 @@ interface BetterAuthModuleCommonOptions {
  * Instance mode: pass a pre-built `betterAuth()` instance. Best plugin type
  * inference (`typeof auth`) and cheapest for the compiler.
  */
-export interface BetterAuthInstanceModeOptions<TAuth extends AnyAuth = AnyAuth>
-	extends BetterAuthModuleCommonOptions {
+export interface BetterAuthInstanceModeOptions<
+	TAuth extends AnyAuth = AnyAuth,
+> extends BetterAuthModuleCommonOptions {
 	auth: TAuth;
 	options?: never;
 }
@@ -64,9 +65,7 @@ export interface BetterAuthOptionsModeOptions<
 	options: TOptions;
 }
 
-export type BetterAuthModuleOptions =
-	| BetterAuthInstanceModeOptions
-	| BetterAuthOptionsModeOptions;
+export type BetterAuthModuleOptions = BetterAuthInstanceModeOptions | BetterAuthOptionsModeOptions;
 
 /** Extras — shape the module graph and are never injected at runtime. */
 export interface BetterAuthModuleExtras {

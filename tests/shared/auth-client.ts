@@ -20,15 +20,11 @@ export async function signUpUser(
 		.post(`${basePath}/sign-up/email`)
 		.send({ email: user.email, password: user.password, name: user.name });
 	if (response.status !== 200) {
-		throw new Error(
-			`sign-up/email failed: ${response.status} ${JSON.stringify(response.body)}`,
-		);
+		throw new Error(`sign-up/email failed: ${response.status} ${JSON.stringify(response.body)}`);
 	}
 	const token: string | undefined = response.body?.token;
 	if (!token) {
-		throw new Error(
-			`sign-up/email returned no session token: ${JSON.stringify(response.body)}`,
-		);
+		throw new Error(`sign-up/email returned no session token: ${JSON.stringify(response.body)}`);
 	}
 	return { ...user, token, userId: response.body.user?.id };
 }

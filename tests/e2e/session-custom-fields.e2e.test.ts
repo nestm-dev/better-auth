@@ -51,14 +51,12 @@ describe(`session custom fields (${testHttpAdapter})`, () => {
 		});
 		const user = uniqueUser();
 		expectedUsername = `user${Date.now()}`;
-		const response = await request(app.getHttpServer())
-			.post("/api/auth/sign-up/email")
-			.send({
-				email: user.email,
-				password: user.password,
-				name: user.name,
-				username: expectedUsername,
-			});
+		const response = await request(app.getHttpServer()).post("/api/auth/sign-up/email").send({
+			email: user.email,
+			password: user.password,
+			name: user.name,
+			username: expectedUsername,
+		});
 		expect(response.status).toBe(200);
 		token = response.body.token;
 	});

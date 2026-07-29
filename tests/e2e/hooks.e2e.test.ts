@@ -101,10 +101,7 @@ describe(`hooks (${testHttpAdapter})`, () => {
 			metadata: { providers: [HookTracker, SignUpHooks] },
 		});
 		await signUpUser(app);
-		expect(app.get(HookTracker).events).toEqual([
-			"before:/sign-up/email",
-			"after:/sign-up/email",
-		]);
+		expect(app.get(HookTracker).events).toEqual(["before:/sign-up/email", "after:/sign-up/email"]);
 	});
 
 	it("supports prefix and catch-all path matchers", async () => {
@@ -189,9 +186,6 @@ describe(`hooks (${testHttpAdapter})`, () => {
 			metadata: { providers: [HookTracker, SignUpHooks] },
 		});
 		await signUpUser(app);
-		expect(app.get(HookTracker).events).toEqual([
-			"before:/sign-up/email",
-			"after:/sign-up/email",
-		]);
+		expect(app.get(HookTracker).events).toEqual(["before:/sign-up/email", "after:/sign-up/email"]);
 	});
 });

@@ -119,6 +119,7 @@ export class BetterAuthModule
 		for (const hookClass of hookClasses) assertHookClass(hookClass);
 		return {
 			module: BetterAuthFeatureModule,
+			imports: options.imports ?? [],
 			providers: [...hookClasses],
 			exports: [...hookClasses],
 		};

@@ -37,7 +37,11 @@ describe(`cors (${testHttpAdapter})`, () => {
 		const response = await request(app.getHttpServer())
 			.post("/api/auth/sign-up/email")
 			.set("Origin", ORIGIN)
-			.send({ email: `cors-${process.pid}@example.com`, password: "super-secure-password", name: "C" });
+			.send({
+				email: `cors-${process.pid}@example.com`,
+				password: "super-secure-password",
+				name: "C",
+			});
 		expect(response.status).toBe(200);
 		expect(response.headers["access-control-allow-origin"]).toBe(ORIGIN);
 	});

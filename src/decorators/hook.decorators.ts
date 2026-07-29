@@ -15,10 +15,7 @@ export interface HookClassOptions {
 export const Hook = DiscoveryService.createDecorator<HookClassOptions | undefined>();
 
 export type HookPathMatcher =
-	| string
-	| readonly string[]
-	| RegExp
-	| ((ctx: AuthHookContext) => boolean);
+	string | readonly string[] | RegExp | ((ctx: AuthHookContext) => boolean);
 
 export interface HookMethodOptions {
 	/**

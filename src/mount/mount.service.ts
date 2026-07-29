@@ -1,7 +1,11 @@
 import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
 import { HttpAdapterHost } from "@nestjs/core";
 import { toNodeHandler } from "better-auth/node";
-import { BETTER_AUTH_BASE_PATH, BETTER_AUTH_INSTANCE, BETTER_AUTH_MODULE_OPTIONS } from "../better-auth.tokens.ts";
+import {
+	BETTER_AUTH_BASE_PATH,
+	BETTER_AUTH_INSTANCE,
+	BETTER_AUTH_MODULE_OPTIONS,
+} from "../better-auth.tokens.ts";
 import type { BetterAuthModuleOptions } from "../interfaces/better-auth-module-options.interface.ts";
 import type { AnyAuth } from "../types/auth.types.ts";
 import { recoverBody } from "./body-recovery.ts";

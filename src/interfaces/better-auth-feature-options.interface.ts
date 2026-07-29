@@ -1,13 +1,18 @@
-import type { Type } from "@nestjs/common";
+import type { ModuleMetadata, Type } from "@nestjs/common";
 
 export interface BetterAuthFeatureOptions {
 	/**
 	 * `@Hook()` / `@DatabaseHook()` classes to register as providers. Note that
 	 * hook classes are discovered container-wide, so a class listed in any
 	 * module's `providers` array works identically — `forFeature` is
-	 * convenience. Hook classes that inject feature-local (non-global)
-	 * providers should be listed in that feature module's own `providers`
-	 * instead, so their dependencies resolve.
+	 * convenience.
 	 */
 	hooks?: Type<unknown>[];
+	/**
+	 * Modules whose exported providers the hook classes depend on. Hooks run
+	 * inside the feature host module, so non-global dependencies must be
+	 * imported here (or the hook class listed in your own module's
+	 * `providers` instead).
+	 */
+	imports?: ModuleMetadata["imports"];
 }

@@ -2,12 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { fromNodeHeaders } from "better-auth/node";
 import type { IncomingHttpHeaders } from "node:http";
 import { BETTER_AUTH_INSTANCE } from "../better-auth.tokens.ts";
-import type {
-	AnyAuth,
-	AuthContextOf,
-	RegisteredAuth,
-	UserSession,
-} from "../types/auth.types.ts";
+import type { AnyAuth, AuthContextOf, RegisteredAuth, UserSession } from "../types/auth.types.ts";
 
 /**
  * Typed accessor for the better-auth instance. Inject it anywhere; for

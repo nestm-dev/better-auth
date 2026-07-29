@@ -7,30 +7,24 @@ import type {
 	BetterAuthModuleOptions,
 } from "./interfaces/better-auth-module-options.interface.ts";
 
-export const {
-	ConfigurableModuleClass,
-	MODULE_OPTIONS_TOKEN,
-	OPTIONS_TYPE,
-	ASYNC_OPTIONS_TYPE,
-} = new ConfigurableModuleBuilder<BetterAuthModuleOptions>({
-	optionsInjectionToken: BETTER_AUTH_MODULE_OPTIONS,
-})
-	.setClassMethodName("forRoot")
-	.setFactoryMethodName("createBetterAuthOptions")
-	.setExtras<BetterAuthModuleExtras>(
-		{ isGlobal: true, disableGlobalGuard: false },
-		(definition, extras) => ({
-			...definition,
-			global: extras.isGlobal !== false,
-			providers: [
-				...(definition.providers ?? []),
-				...(extras.disableGlobalGuard
-					? []
-					: [{ provide: APP_GUARD, useClass: BetterAuthGuard }]),
-			],
-		}),
-	)
-	.build();
+export const { ConfigurableModuleClass, MODULE_OPTIONS_TOKEN, OPTIONS_TYPE, ASYNC_OPTIONS_TYPE } =
+	new ConfigurableModuleBuilder<BetterAuthModuleOptions>({
+		optionsInjectionToken: BETTER_AUTH_MODULE_OPTIONS,
+	})
+		.setClassMethodName("forRoot")
+		.setFactoryMethodName("createBetterAuthOptions")
+		.setExtras<BetterAuthModuleExtras>(
+			{ isGlobal: true, disableGlobalGuard: false },
+			(definition, extras) => ({
+				...definition,
+				global: extras.isGlobal !== false,
+				providers: [
+					...(definition.providers ?? []),
+					...(extras.disableGlobalGuard ? [] : [{ provide: APP_GUARD, useClass: BetterAuthGuard }]),
+				],
+			}),
+		)
+		.build();
 
 /** Options accepted by `BetterAuthModule.forRoot()` (module options + extras). */
 export type BetterAuthForRootOptions = typeof OPTIONS_TYPE;
