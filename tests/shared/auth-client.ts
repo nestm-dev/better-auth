@@ -25,7 +25,11 @@ export async function signUpUser(
 		);
 	}
 	const token: string | undefined = response.body?.token;
-	if (!token) throw new Error("sign-up/email returned no session token");
+	if (!token) {
+		throw new Error(
+			`sign-up/email returned no session token: ${JSON.stringify(response.body)}`,
+		);
+	}
 	return { ...user, token, userId: response.body.user?.id };
 }
 
