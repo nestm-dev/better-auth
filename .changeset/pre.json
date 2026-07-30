@@ -1,8 +1,10 @@
 {
-	"mode": "pre",
-	"tag": "alpha",
-	"initialVersions": {
-		"@nestm/better-auth": "0.1.0-alpha.0"
-	},
-	"changesets": []
+  "mode": "pre",
+  "tag": "alpha",
+  "initialVersions": {
+    "@nestm/better-auth": "0.1.0-alpha.0"
+  },
+  "changesets": [
+    "initial-release"
+  ]
 }
