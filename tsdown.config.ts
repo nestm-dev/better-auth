@@ -9,5 +9,5 @@ export default defineConfig({
 	sourcemap: true,
 	clean: true,
 	fixedExtension: true,
-	external: [/^@nestjs\//, /^better-auth(\/|$)/, "reflect-metadata", "rxjs"],
+	deps: { neverBundle: [/^@nestjs\//, /^better-auth(\/|$)/, "reflect-metadata", "rxjs"] },
 });
