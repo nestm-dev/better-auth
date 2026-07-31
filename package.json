@@ -62,7 +62,7 @@
 		"verify:pack": "pnpm run build && publint --strict",
 		"prepack": "pnpm run build",
 		"changeset": "changeset",
-		"release": "changeset publish"
+		"release": "node scripts/publish.mjs"
 	},
 	"peerDependencies": {
 		"@nestjs/common": "^12.0.0-alpha.5",
