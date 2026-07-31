@@ -1,5 +1,11 @@
 # @nestm/better-auth
 
+## 0.1.0-alpha.3
+
+### Patch Changes
+
+- 1be0ba3: Declare `BetterAuthModule.forRoot()` and `forRootAsync()` explicitly so their public signatures remain available in the rolled-up package declarations.
+
 ## 0.1.0-alpha.2
 
 ### Minor Changes
