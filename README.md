@@ -108,6 +108,7 @@ BetterAuthModule.forRootAsync({
 | `options`            | option | Raw `BetterAuthOptions`; the module calls `betterAuth()` itself and pre-seeds `hooks`/`databaseHooks`.                                                                                                                                                                                                               |
 | `basePath`           | option | Override the mount path only (for edge cases like proxy rewrites) — better-auth's router still uses its own config, so to actually move the endpoints set better-auth's `basePath`/`baseURL`. Default mirrors better-auth: path inside `baseURL` → (`BETTER_AUTH_URL` when no `baseURL`) → `basePath` → `/api/auth`. |
 | `cors`               | option | `false` to disable, or `{ origin, credentials, methods, allowedHeaders, maxAge }`. Defaults to array `trustedOrigins`.                                                                                                                                                                                               |
+| `routePolicy`        | option | Adapter-independent HTTP policy that runs after auth-route CORS/body recovery and before `middleware` or better-auth. Return a Web `Response` to short-circuit.                                                                                                                                                      |
 | `middleware`         | option | `(req, res, run) => …` wrapper around the auth handler — for MikroORM `RequestContext` / AsyncLocalStorage setups.                                                                                                                                                                                                   |
 | `isGlobal`           | extra  | Default `true`.                                                                                                                                                                                                                                                                                                      |
 | `disableGlobalGuard` | extra  | Skip the automatic `APP_GUARD` registration.                                                                                                                                                                                                                                                                         |
@@ -263,6 +264,47 @@ const app = await NestFactory.create(AppModule, { rawBody: true });
 
 `bodyParser: false` continues to work if you prefer it.
 
+## Route policy
+
+`routePolicy` is the HTTP-mount boundary for endpoint allowlists, self-service sign-up
+switches, and request-shape rules that must run before better-auth. It receives the uppercase
+method, original URL, full pathname, auth-relative path, Web `Headers`, parsed body, and the
+byte-exact raw body when recoverable:
+
+```ts
+BetterAuthModule.forRoot({
+	auth,
+	routePolicy: ({ method, authPath, body }) => {
+		if (authPath.startsWith("/sign-up")) {
+			return Response.json(
+				{ code: "SIGN_UP_DISABLED", message: "Self-service sign-up is disabled." },
+				{ status: 403 },
+			);
+		}
+
+		if (
+			method === "POST" &&
+			authPath === "/organization/accept-invitation" &&
+			typeof body === "object" &&
+			body !== null &&
+			"resend" in body &&
+			Boolean(body.resend)
+		) {
+			return Response.json(
+				{ code: "BAD_REQUEST", message: "Resending is not allowed on this route." },
+				{ status: 400 },
+			);
+		}
+	},
+});
+```
+
+The ordering is CORS → body recovery → `routePolicy` → `middleware` → better-auth. An answered
+CORS preflight never reaches the policy. Returned responses are written directly at the raw
+auth mount, so Nest guards, interceptors, and exception filters do not rewrite them. Thrown or
+rejected errors are forwarded to the HTTP adapter's error path. Server-side `auth.api.*` calls
+do not pass through `routePolicy`.
+
 ## CORS
 
 CORS for the auth routes is handled by the module itself (Nest's `enableCors()` cannot reach
@@ -283,7 +325,7 @@ instead.
 
 - Auth routes bypass Nest's router pipeline: guards, interceptors, and exception filters do
   not run for `/api/auth/*` (functional/`MiddlewareConsumer` middleware **does** run).
-  Customize via better-auth hooks instead.
+  Customize with `routePolicy` or better-auth hooks instead.
 - Root mounting (`basePath: '/'`) is rejected at bootstrap — it would swallow every
   application route.
 - With `isGlobal: false`, other modules' `onModuleInit` hooks may run before the auth mount

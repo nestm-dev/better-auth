@@ -30,6 +30,40 @@ export type BetterAuthRequestMiddleware = (
 	run: () => Promise<void>,
 ) => unknown;
 
+/**
+ * Adapter-independent request information supplied to `routePolicy`.
+ *
+ * `url` is the original request target (including its query string),
+ * `pathname` is the full application pathname, and `authPath` is relative to
+ * the resolved better-auth mount path. `rawBody` is byte-exact when Nest was
+ * bootstrapped with `{ rawBody: true }` or the adapter stream is still
+ * untouched; it is otherwise `undefined`.
+ */
+export interface BetterAuthRoutePolicyContext {
+	/** Uppercase HTTP method (`GET`, `POST`, ...). */
+	readonly method: string;
+	/** Original request target, including its query string. */
+	readonly url: string;
+	/** Full request pathname, without the query string. */
+	readonly pathname: string;
+	/** Path relative to the better-auth mount, always beginning with `/`. */
+	readonly authPath: string;
+	/** Request headers normalized to the Web `Headers` API. */
+	readonly headers: Headers;
+	/** Body parsed by the active Nest HTTP adapter, when available. */
+	readonly body: unknown;
+	/** Byte-exact request body when it is still recoverable. */
+	readonly rawBody: Uint8Array | undefined;
+}
+
+/**
+ * Runs before request middleware and better-auth for mounted HTTP requests.
+ * Returning a Web `Response` short-circuits the request.
+ */
+export type BetterAuthRoutePolicy = (
+	context: BetterAuthRoutePolicyContext,
+) => Promise<Response | void> | Response | void;
+
 interface BetterAuthModuleCommonOptions {
 	/**
 	 * Overrides the mount path. When omitted it is resolved from the auth
@@ -39,6 +73,7 @@ interface BetterAuthModuleCommonOptions {
 	basePath?: string;
 	cors?: false | BetterAuthCorsOptions;
 	middleware?: BetterAuthRequestMiddleware;
+	routePolicy?: BetterAuthRoutePolicy;
 }
 
 /**
