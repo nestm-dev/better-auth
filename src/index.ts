@@ -32,6 +32,8 @@ export type {
 	BetterAuthModuleExtras,
 	BetterAuthCorsOptions,
 	BetterAuthRequestMiddleware,
+	BetterAuthRoutePolicy,
+	BetterAuthRoutePolicyContext,
 } from "./interfaces/better-auth-module-options.interface.ts";
 export type { BetterAuthFeatureOptions } from "./interfaces/better-auth-feature-options.interface.ts";
 export type { BetterAuthOptionsFactory } from "./interfaces/better-auth-options-factory.interface.ts";

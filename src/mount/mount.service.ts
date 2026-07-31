@@ -8,7 +8,7 @@ import {
 } from "../better-auth.tokens.ts";
 import type { BetterAuthModuleOptions } from "../interfaces/better-auth-module-options.interface.ts";
 import type { AnyAuth } from "../types/auth.types.ts";
-import { recoverBody } from "./body-recovery.ts";
+import { recoverBody, recoverBodyForPolicy } from "./body-recovery.ts";
 import { resolveCorsHandler } from "./cors.ts";
 import {
 	getNodeRequest,
@@ -17,6 +17,7 @@ import {
 	type AdapterRequest,
 	type AdapterResponse,
 } from "./request-utils.ts";
+import { createRoutePolicyContext, writeRoutePolicyResponse } from "./route-policy.ts";
 
 /**
  * Mounts the better-auth Node handler as a raw, basePath-scoped adapter
@@ -61,6 +62,7 @@ export class BetterAuthMountService {
 		const handler = toNodeHandler(this.auth);
 		const cors = resolveCorsHandler(this.auth, this.options, this.logger);
 		const wrap = this.options.middleware;
+		const routePolicy = this.options.routePolicy;
 
 		httpAdapter.use(
 			(req: AdapterRequest, res: AdapterResponse, next: (error?: unknown) => void) => {
@@ -71,14 +73,22 @@ export class BetterAuthMountService {
 				const nodeReq = getNodeRequest(req);
 				const nodeRes = getNodeResponse(res);
 				if (cors?.(nodeReq, nodeRes)) return;
-				recoverBody(req, nodeReq);
-				const run = () => handler(nodeReq, nodeRes);
-				try {
-					const result = wrap ? wrap(req, res, run) : run();
-					void Promise.resolve(result).catch((error: unknown) => next(error));
-				} catch (error) {
-					next(error);
-				}
+				const execute = async (): Promise<void> => {
+					if (routePolicy) {
+						const recoveredBody = await recoverBodyForPolicy(req, nodeReq);
+						const context = createRoutePolicyContext(req, nodeReq, basePath, recoveredBody);
+						const policyResponse = await routePolicy(context);
+						if (policyResponse instanceof Response) {
+							await writeRoutePolicyResponse(policyResponse, nodeRes, context.method);
+							return;
+						}
+					} else {
+						recoverBody(req, nodeReq);
+					}
+					const run = () => handler(nodeReq, nodeRes);
+					await (wrap ? wrap(req, res, run) : run());
+				};
+				void execute().catch((error: unknown) => next(error));
 			},
 		);
 		this.mounted = true;

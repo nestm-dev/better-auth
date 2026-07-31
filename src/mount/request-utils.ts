@@ -6,8 +6,12 @@ export type AdapterRequest = any;
 // oxlint-disable-next-line typescript/no-explicit-any
 export type AdapterResponse = any;
 
+export function getRequestUrl(req: AdapterRequest): string {
+	return req?.originalUrl ?? req?.url ?? req?.raw?.url ?? "";
+}
+
 export function getRequestPath(req: AdapterRequest): string {
-	const url: string = req?.originalUrl ?? req?.url ?? req?.raw?.url ?? "";
+	const url = getRequestUrl(req);
 	const queryIndex = url.indexOf("?");
 	return queryIndex === -1 ? url : url.slice(0, queryIndex);
 }

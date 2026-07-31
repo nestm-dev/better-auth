@@ -5,6 +5,7 @@
     "@nestm/better-auth": "0.1.0-alpha.0"
   },
   "changesets": [
-    "initial-release"
+    "initial-release",
+    "quiet-routes-decide"
   ]
 }
