@@ -8,7 +8,11 @@ import type {
 	OnModuleInit,
 	Type,
 } from "@nestjs/common";
-import { ConfigurableModuleClass } from "./better-auth.module-definition.ts";
+import {
+	ConfigurableModuleClass,
+	type BetterAuthForRootAsyncOptions,
+	type BetterAuthForRootOptions,
+} from "./better-auth.module-definition.ts";
 import {
 	BETTER_AUTH_BASE_PATH,
 	BETTER_AUTH_INSTANCE,
@@ -109,6 +113,16 @@ export class BetterAuthModule
 		this.hooks.clear();
 		this.databaseHooks.clear();
 		await (this.auth.$context as Promise<unknown>).catch(() => undefined);
+	}
+
+	/** Register Better Auth synchronously. Declared explicitly for rolled-up declarations. */
+	static forRoot(options: BetterAuthForRootOptions): DynamicModule {
+		return super.forRoot(options);
+	}
+
+	/** Register Better Auth through Nest dependency injection. */
+	static forRootAsync(options: BetterAuthForRootAsyncOptions): DynamicModule {
+		return super.forRootAsync(options);
 	}
 
 	/**
