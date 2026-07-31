@@ -23,5 +23,6 @@
 		"noEmit": true,
 		"declaration": true
 	},
-	"include": ["src", "tests", "*.config.ts"]
+	"include": ["src", "tests", "*.config.ts"],
+	"exclude": ["tests/packed-types"]
 }
