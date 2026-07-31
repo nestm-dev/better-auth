@@ -59,7 +59,8 @@
 		"test:fastify": "cross-env TEST_HTTP_ADAPTER=fastify vitest run",
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage",
-		"verify:pack": "pnpm run build && publint --strict",
+		"verify:pack": "pnpm run build && publint --strict && pnpm run test:packed-types",
+		"test:packed-types": "tsc -p tests/packed-types/tsconfig.json",
 		"prepack": "pnpm run build",
 		"changeset": "changeset",
 		"release": "node scripts/publish.mjs"

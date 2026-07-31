@@ -31,8 +31,7 @@ jobs:
       - uses: actions/setup-node@v5
         with: { node-version: 24, cache: pnpm }
       - run: pnpm install --frozen-lockfile
-      - run: pnpm run build
-      - run: pnpm dlx publint --strict
+      - run: pnpm run verify:pack
       - run: pnpm dlx @arethetypeswrong/cli --pack . --profile esm-only
       # Guards the silent-decorator-metadata-loss class of bundler bug.
       - run: |
