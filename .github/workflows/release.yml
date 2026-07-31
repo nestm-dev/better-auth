@@ -50,7 +50,8 @@ jobs:
           # With pending changesets: opens/updates the "Version Packages" PR.
           # When that PR is merged (no pending changesets left): publishes to
           # npm via pnpm's OIDC trusted publishing (provenance enforced via
-          # pnpm-workspace.yaml `provenance: true`) and creates the GitHub
+          # pnpm-workspace.yaml `provenance: true`). The release wrapper keeps
+          # prereleases on their Changesets dist tag and creates the GitHub
           # Release from the changelog.
           publish: pnpm run release
           version: pnpm changeset version
