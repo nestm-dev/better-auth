@@ -68,4 +68,8 @@ describe("barrel exports", () => {
 	it("Public is an alias of AllowAnonymous", () => {
 		expect(barrel.Public).toBe(barrel.AllowAnonymous);
 	});
+
+	it("uses a globally registered resolved-session marker", () => {
+		expect(barrel.SESSION_RESOLVED).toBe(Symbol.for("@nestm/better-auth:session-resolved"));
+	});
 });

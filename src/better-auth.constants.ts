@@ -11,7 +11,7 @@ export type DatabaseHookPhase = "before" | "after";
  * deliberately skipped) the session for a request, so a second guard pass and
  * `@Session()` can tell "no session" apart from "guard never ran".
  */
-export const SESSION_RESOLVED = Symbol("better_auth:session_resolved");
+export const SESSION_RESOLVED = Symbol.for("@nestm/better-auth:session-resolved");
 
 /** Namespaced metadata keys used by the guard-facing decorators. */
 export const METADATA_KEY = {

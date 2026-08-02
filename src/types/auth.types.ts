@@ -1,5 +1,6 @@
 import type { Auth, BetterAuthOptions } from "better-auth";
 import type { createAuthMiddleware } from "better-auth/api";
+import { SESSION_RESOLVED } from "../better-auth.constants.ts";
 
 /**
  * Any better-auth instance, regardless of plugin/options generics. This is a
@@ -59,6 +60,13 @@ export type UserSession<TAuth extends AnyAuth = RegisteredAuth> = TAuth["$Infer"
 
 /** The user model as inferred from the auth instance. */
 export type AuthUser<TAuth extends AnyAuth = RegisteredAuth> = UserSession<TAuth>["user"];
+
+/** Request fields populated by `BetterAuthGuard`, including the resolved-session marker. */
+export interface BetterAuthRequestState<TAuth extends AnyAuth = RegisteredAuth> {
+	session?: UserSession<TAuth> | null;
+	user?: AuthUser<TAuth> | null;
+	[SESSION_RESOLVED]?: boolean;
+}
 
 /** The resolved better-auth `AuthContext` for the given auth instance. */
 export type AuthContextOf<TAuth extends AnyAuth = RegisteredAuth> = Awaited<TAuth["$context"]>;

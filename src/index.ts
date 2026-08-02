@@ -45,6 +45,7 @@ export {
 	type AuthContextOf,
 	type AuthHookContext,
 	type AuthUser,
+	type BetterAuthRequestState,
 	type BetterAuthTypeRegistry,
 	type InferAuth,
 	type RegisteredAuth,
