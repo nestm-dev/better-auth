@@ -5,8 +5,14 @@
  */
 import { betterAuth } from "better-auth";
 import { organization } from "better-auth/plugins";
-import type { AnyAuth, AuthUser, RegisteredAuth, UserSession } from "../../src/index.ts";
-import { BetterAuthService, resolveAuthBasePath } from "../../src/index.ts";
+import type {
+	AnyAuth,
+	AuthUser,
+	BetterAuthRequestState,
+	RegisteredAuth,
+	UserSession,
+} from "../../src/index.ts";
+import { BetterAuthService, resolveAuthBasePath, SESSION_RESOLVED } from "../../src/index.ts";
 import type { BetterAuthModuleOptions } from "../../src/index.ts";
 
 const strictAuth = betterAuth({
@@ -31,6 +37,11 @@ const tenantId: string = session.user.tenantId;
 declare const service: BetterAuthService<typeof strictAuth>;
 const api: (typeof strictAuth)["api"] = service.api;
 
+declare const requestState: BetterAuthRequestState<typeof strictAuth>;
+const requestSession: StrictSession | null | undefined = requestState.session;
+const requestUser: StrictUser | null | undefined = requestState.user;
+const sessionResolved: boolean | undefined = requestState[SESSION_RESOLVED];
+
 // Un-augmented registry falls back to plain Auth without erroring.
 type DefaultSession = UserSession<RegisteredAuth>;
 declare const defaultSession: DefaultSession;
@@ -38,5 +49,15 @@ const email: string = defaultSession.user.email;
 
 const basePath: string = resolveAuthBasePath(strictAuth);
 
-export { asAny, asOptions, tenantId, api, email, basePath };
+export {
+	asAny,
+	asOptions,
+	tenantId,
+	api,
+	requestSession,
+	requestUser,
+	sessionResolved,
+	email,
+	basePath,
+};
 export type { StrictSession, StrictUser };

@@ -33,7 +33,7 @@
 ## Install
 
 ```bash
-pnpm add @nestm/better-auth better-auth
+pnpm add @nestm/better-auth@alpha better-auth
 ```
 
 ## Quick start
@@ -250,6 +250,11 @@ materialized.
 `BetterAuthService` exposes `.instance`, `.api`, `.options`, `.context()` and
 `.getSession(headers)`. The raw instance is injectable via `@InjectBetterAuth()` or the
 `BETTER_AUTH_INSTANCE` token; the resolved mount path via `BETTER_AUTH_BASE_PATH`.
+
+HTTP adapters and application request augmentations can extend `BetterAuthRequestState` instead
+of recreating Better Auth's plugin-aware `session` and `user` fields. Its resolved-session marker
+uses the global symbol registry so guards and decorators remain compatible across duplicate package
+copies.
 
 ## Body parsing
 
