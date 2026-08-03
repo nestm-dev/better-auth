@@ -1,6 +1,6 @@
 {
 	"name": "@nestm/better-auth",
-	"version": "0.1.0-alpha.3",
+	"version": "0.1.0-alpha.4",
 	"description": "Better Auth integration for NestJS 12 (ESM)",
 	"license": "BSD-3-Clause",
 	"author": "nestm",
