@@ -6,6 +6,7 @@
   },
   "changesets": [
     "bright-auth-types",
+    "calm-request-state",
     "initial-release",
     "quiet-routes-decide"
   ]
