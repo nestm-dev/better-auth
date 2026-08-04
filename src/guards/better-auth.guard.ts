@@ -1,9 +1,9 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { fromNodeHeaders } from "better-auth/node";
 import type { CanActivate, ExecutionContext } from "@nestjs/common";
 import { SESSION_RESOLVED } from "../better-auth.constants.ts";
-import { BETTER_AUTH_INSTANCE } from "../better-auth.tokens.ts";
+import { BETTER_AUTH_INSTANCE, BETTER_AUTH_MODULE_OPTIONS } from "../better-auth.tokens.ts";
 import {
 	AllowAnonymous,
 	MemberHasPermission,
@@ -22,12 +22,15 @@ import {
 } from "../utils/execution-context.util.ts";
 import { createAuthError } from "./auth-errors.ts";
 import type { AnyAuth } from "../types/auth.types.ts";
+import type { BetterAuthModuleOptions } from "../interfaces/better-auth-module-options.interface.ts";
 
 /** Loosely-typed view of the session for guard-internal checks. */
 interface GuardSession {
 	user?: { role?: string | string[] } & Record<string, unknown>;
 	session?: { activeOrganizationId?: string } & Record<string, unknown>;
 }
+
+type ReflectTarget = Parameters<Reflector["get"]>[1];
 
 function matchesRequiredRole(
 	role: string | readonly string[] | null | undefined,
@@ -50,6 +53,9 @@ export class BetterAuthGuard implements CanActivate {
 	constructor(
 		private readonly reflector: Reflector,
 		@Inject(BETTER_AUTH_INSTANCE) private readonly auth: AnyAuth,
+		@Optional()
+		@Inject(BETTER_AUTH_MODULE_OPTIONS)
+		private readonly options?: BetterAuthModuleOptions,
 	) {}
 
 	/**
@@ -83,6 +89,9 @@ export class BetterAuthGuard implements CanActivate {
 		) {
 			anonymous = undefined;
 			optional = undefined;
+		}
+		if (anonymous === undefined && this.hasInteropPublicMarker(handler, targets)) {
+			anonymous = {};
 		}
 		const kind = resolveContextKind(context);
 		const request = await getRequestFromContext(context);
@@ -154,6 +163,19 @@ export class BetterAuthGuard implements CanActivate {
 		}
 
 		return true;
+	}
+
+	/** Foreign public markers follow the same class-vs-handler precedence as our own decorators. */
+	private hasInteropPublicMarker(handler: ReflectTarget, targets: ReflectTarget[]): boolean {
+		const publicKeys = this.options?.interop?.publicKeys ?? [];
+		const declaredOnHandler = publicKeys.some(
+			(key) => this.reflector.get<unknown>(key, handler) !== undefined,
+		);
+		if (declaredOnHandler) return true;
+		if (this.handlerDeclaresAuthorization(handler)) return false;
+		return publicKeys.some(
+			(key) => this.reflector.getAllAndOverride<unknown>(key, targets) !== undefined,
+		);
 	}
 
 	private api(): Record<string, unknown> {

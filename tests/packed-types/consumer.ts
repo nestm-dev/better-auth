@@ -1,4 +1,17 @@
-import { BetterAuthModule } from "@nestm/better-auth";
+import {
+	BetterAuthGuard,
+	BetterAuthModule,
+	type AnyAuth,
+	type BetterAuthInteropOptions,
+} from "@nestm/better-auth";
+import type { Reflector } from "@nestjs/core";
+
+declare const reflector: Reflector;
+declare const auth: AnyAuth;
+
+// Patch releases must preserve the guard's original two-argument constructor.
+const manuallyConstructedGuard = new BetterAuthGuard(reflector, auth);
+const interop: BetterAuthInteropOptions = { publicKeys: ["legacy:public", Symbol()] };
 
 const synchronousModule = BetterAuthModule.forRoot({
 	options: {
@@ -15,4 +28,4 @@ const asynchronousModule = BetterAuthModule.forRootAsync({
 	}),
 });
 
-export { asynchronousModule, synchronousModule };
+export { asynchronousModule, interop, manuallyConstructedGuard, synchronousModule };

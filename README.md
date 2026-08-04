@@ -110,6 +110,7 @@ BetterAuthModule.forRootAsync({
 | `cors`               | option | `false` to disable, or `{ origin, credentials, methods, allowedHeaders, maxAge }`. Defaults to array `trustedOrigins`.                                                                                                                                                                                               |
 | `routePolicy`        | option | Adapter-independent HTTP policy that runs after auth-route CORS/body recovery and before `middleware` or better-auth. Return a Web `Response` to short-circuit.                                                                                                                                                      |
 | `middleware`         | option | `(req, res, run) => …` wrapper around the auth handler — for MikroORM `RequestContext` / AsyncLocalStorage setups.                                                                                                                                                                                                   |
+| `interop.publicKeys` | option | Metadata keys from other guards that mean public. Their presence skips session lookup with the same handler-level authorization override as `@AllowAnonymous()`.                                                                                                                                                     |
 | `isGlobal`           | extra  | Default `true`.                                                                                                                                                                                                                                                                                                      |
 | `disableGlobalGuard` | extra  | Skip the automatic `APP_GUARD` registration.                                                                                                                                                                                                                                                                         |
 
@@ -157,6 +158,9 @@ Notes:
 - Authorization is fail-closed: a class-level `@AllowAnonymous`/`@OptionalAuth` is ignored on
   handlers that declare their own `@Roles`/`@OrgRoles`/`@RequireActiveOrg`/permission
   requirements (a handler-level `@AllowAnonymous` still wins).
+- `interop.publicKeys` lets one global guard honor another package's public-route decorator
+  without an application wrapper guard. Handler-level Better Auth requirements still override a
+  class-level foreign marker; a foreign marker placed on the handler itself is explicit and wins.
 - WebSocket gateways need `@UseGuards(BetterAuthGuard)` explicitly (Nest's `APP_GUARD` does
   not cover gateways). The guard understands http, ws, and rpc contexts; GraphQL is wired but
   currently **experimental** (the `@nestjs/graphql` v12-compatible stack is not yet stable).
