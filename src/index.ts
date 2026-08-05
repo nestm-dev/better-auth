@@ -31,6 +31,7 @@ export type {
 	BetterAuthOptionsModeOptions,
 	BetterAuthModuleExtras,
 	BetterAuthCorsOptions,
+	BetterAuthInteropOptions,
 	BetterAuthRequestMiddleware,
 	BetterAuthRoutePolicy,
 	BetterAuthRoutePolicyContext,

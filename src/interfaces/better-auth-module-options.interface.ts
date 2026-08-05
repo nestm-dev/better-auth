@@ -64,6 +64,16 @@ export type BetterAuthRoutePolicy = (
 	context: BetterAuthRoutePolicyContext,
 ) => Promise<Response | void> | Response | void;
 
+/** Metadata owned by another guard that {@link BetterAuthGuard} should honor. */
+export interface BetterAuthInteropOptions {
+	/**
+	 * Foreign `@Public()`-equivalent metadata keys. Their presence skips session
+	 * resolution, subject to the same handler-level authorization override as
+	 * {@link AllowAnonymous}.
+	 */
+	readonly publicKeys?: readonly (string | symbol)[];
+}
+
 interface BetterAuthModuleCommonOptions {
 	/**
 	 * Overrides the mount path. When omitted it is resolved from the auth
@@ -74,6 +84,7 @@ interface BetterAuthModuleCommonOptions {
 	cors?: false | BetterAuthCorsOptions;
 	middleware?: BetterAuthRequestMiddleware;
 	routePolicy?: BetterAuthRoutePolicy;
+	interop?: BetterAuthInteropOptions;
 }
 
 /**
