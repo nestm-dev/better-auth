@@ -1,5 +1,13 @@
 # @nestm/better-auth
 
+## 0.1.0-alpha.5
+
+### Patch Changes
+
+- 1ebb22a: Let `BetterAuthGuard` honor foreign public-route metadata through
+  `interop.publicKeys`, removing the need for application wrapper guards when
+  another framework owns a public endpoint.
+
 ## 0.1.0-alpha.4
 
 ### Patch Changes
