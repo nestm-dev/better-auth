@@ -8,6 +8,7 @@
     "bright-auth-types",
     "calm-request-state",
     "initial-release",
+    "public-metadata-interop",
     "quiet-routes-decide"
   ]
 }
