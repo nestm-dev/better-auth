@@ -66,6 +66,36 @@ jobs:
       - run: pnpm run test:${{ matrix.adapter }}
         env: { CI: "true" }
 
+  # TypeORM adapter conformance: every flow run through both @better-auth/drizzle-adapter and
+  # ./typeorm against one committed DDL, then compared table by table. Runs in a NON-UTC zone
+  # (see tests/postgres/README.md) — on UTC the timezone class of bug is invisible.
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: nestm_better_auth
+          POSTGRES_USER: nestm
+          POSTGRES_PASSWORD: nestm
+          TZ: UTC
+          PGTZ: UTC
+        ports: ["55437:5432"]
+        options: >-
+          --health-cmd "pg_isready -U nestm -d nestm_better_auth"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/setup@v2
+        with:
+          install: false
+      - uses: actions/setup-node@v7
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run test:postgres
+        env:
+          PG_URL: postgresql://nestm:nestm@localhost:55437/nestm_better_auth
+
   # Non-blocking early warnings: next Nest alpha, better-auth RC, Node current.
   canary:
     runs-on: ubuntu-latest

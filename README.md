@@ -13,7 +13,7 @@
 ## Requirements
 
 - **NestJS 12** (`^12.0.0-alpha.5`, on the `next` npm tag) — this package is ESM-only, matching Nest 12's ESM-first direction
-- **Node >= 22.12**
+- **Node >= 22.13** (raised from 22.12 by the optional `typeorm` peer, which declares `^20.19 || ^22.13 || >=24.11`)
 - **better-auth >= 1.6 < 2**
 
 > **Nest 12 alpha peer-dependency note:** the current `12.0.0-alpha.*` packages still declare
@@ -329,6 +329,140 @@ The better-auth handler is mounted as a raw adapter middleware, **outside Nest's
 `RouterModule.register()` has no effect on controller-less modules like this one; to move the
 auth endpoints, set better-auth's `basePath`/`baseURL` (or the module's `basePath` override)
 instead.
+
+## TypeORM database adapter
+
+A Better Auth database adapter backed by a TypeORM `DataSource`, shipped from the `./typeorm`
+subpath. It exists because no TypeORM adapter exists anywhere else — `@better-auth/typeorm-adapter`
+is a 404 on npm — so a TypeORM application had to keep a second ORM alive purely for auth.
+
+```bash
+pnpm add typeorm  # optional peer, only needed if you use this subpath
+```
+
+```ts
+import { typeormAdapter } from "@nestm/better-auth/typeorm";
+
+BetterAuthModule.forRootAsync({
+	inject: [DataSource],
+	useFactory: (dataSource: DataSource) => ({
+		options: { database: typeormAdapter(dataSource) },
+	}),
+});
+```
+
+`typeorm` is an **optional** peer and the built entry imports it only as a type — nothing is
+loaded at runtime, so installing this package without TypeORM stays free.
+
+### Requirements
+
+- PostgreSQL. The adapter emits SQL directly and is verified against TypeORM's `postgres`,
+  `aurora-postgres` and `cockroachdb` drivers; any other driver is rejected at construction
+  with a message naming it, rather than failing later on the first write.
+- Entities registered on the `DataSource` for every Better Auth model in use.
+
+### How models and fields are resolved
+
+Better Auth speaks camelCase model and field names (`rateLimit`, `userId`); your database
+almost certainly does not. Resolution goes through `EntityMetadata`, so it already reflects
+`@Column({ name })`, naming strategies and inheritance:
+
+| Better Auth | tries                                                                    | example                                              |
+| ----------- | ------------------------------------------------------------------------ | ---------------------------------------------------- |
+| model       | `entities` override → entity class name → table name → snake_cased model | `rateLimit` → `class RateLimit` → table `rate_limit` |
+| field       | property name → column name → snake_cased field                          | `userId` → property `userId` → column `user_id`      |
+
+An unresolvable name throws immediately, listing the candidates it saw. Ambiguity is never
+guessed:
+
+```ts
+typeormAdapter(dataSource, { entities: { rateLimit: ThrottleBucket } });
+```
+
+### Options
+
+| Option        | Default              | Purpose                                                                                         |
+| ------------- | -------------------- | ----------------------------------------------------------------------------------------------- |
+| `entities`    | `{}`                 | Explicit model → entity mapping.                                                                |
+| `getManager`  | `dataSource.manager` | Supplies the `EntityManager` per statement, so auth writes can join a surrounding unit of work. |
+| `transaction` | `false`              | Enables Better Auth's `transaction()`, backed by `dataSource.transaction()`.                    |
+| `usePlural`   | `false`              | Appends `s` to model names during resolution.                                                   |
+| `debugLogs`   | `false`              | Forwarded to the adapter factory.                                                               |
+
+`getManager` is resolved **per statement**, not once at construction — an adapter is built at
+application boot, long before any request context exists:
+
+```ts
+typeormAdapter(dataSource, { getManager: () => unitOfWork.getStore()?.manager });
+```
+
+Returning `undefined` falls back to `dataSource.manager`, so it is safe to call outside a
+scoped context. Statements inside `transaction()` ignore the hook and use the transactional
+manager — a callback that escaped its own transaction would defeat the point.
+
+### Timezones — this adapter owns the concern
+
+**Short version: you do not need `pg.defaults.parseInputDatesAsUTC`, and you do not need a
+custom type parser for OID 1114. The adapter is correct on any machine, in any zone, with or
+without them.**
+
+Every Better Auth timestamp column is `timestamp` WITHOUT time zone holding a UTC instant, and
+session and OTP expiry are wall-clock comparisons against it. node-pg's defaults are
+offset-dependent in _both_ directions: a JS `Date` bind parameter is rendered with the process's
+LOCAL offset, which Postgres then truncates when casting to `timestamp`, and a bare `timestamp`
+column is parsed back as LOCAL. Neither fails loudly — sessions just expire early or late by the
+machine's offset. On a UTC machine the bug is invisible, which is why CI does not catch it.
+
+The adapter closes both halves itself, per statement, **without mutating any process-global
+driver state**:
+
+- **writes** bind a `Date` as an ISO-8601 UTC string (`2026-03-04T05:06:07.000Z`), so the
+  intent is in the text. Cast to `timestamp` it keeps the UTC wall-clock; cast to `timestamptz`
+  it resolves to the same instant.
+- **reads** project naive timestamp columns as `col AT TIME ZONE 'UTC'`, which yields a
+  zone-qualified value the driver cannot misread. Columns already declared `timestamptz` are
+  left alone.
+
+Setting `pg.defaults` would have been the smaller diff and the wrong call: it is a process-wide
+mutation of a module the adapter does not own, and it would silently change every other query in
+the host application, including ones belonging to other data sources.
+
+The one thing outside the adapter's reach is a column DEFAULT: `created_at timestamp DEFAULT
+now()` renders in the **server's** zone, so keep the database on UTC. Better Auth supplies
+`createdAt` explicitly for every model, so the default is only a backstop.
+
+### Divergences from `@better-auth/drizzle-adapter`
+
+The conformance suite runs every flow through both adapters against the same DDL and asserts the
+resulting rows are identical, so these are the deliberate differences that remain:
+
+- **`supportsUUIDs: false`** (Drizzle: `true` on Postgres). With `true` _and_
+  `advanced.database.generateId: "uuid"`, Better Auth stops emitting an `id` and expects the
+  column to default one — which `id text PRIMARY KEY` does not do, so every insert fails. `false`
+  keeps id generation in Better Auth. If your primary key really is `uuid DEFAULT
+gen_random_uuid()`, express that with `generateId: false`.
+- **`supportsJSON: false`, `supportsArrays: false`** (Drizzle: `true` on Postgres). Better Auth's
+  own schema has no `json`, `string[]` or `number[]` field, so this only affects additional
+  fields you declare. `false` serialises them to strings, which a `text` column accepts; `true`
+  requires `jsonb`/`text[]` DDL.
+- **Stronger `consumeOne` / `incrementOne`.** Both are single statements that repeat the guard
+  _outside_ the `IN (SELECT ... LIMIT 1)` subquery. Postgres's EvalPlanQual re-checks the outer
+  qualification against the newest row version when a blocked writer unblocks; a guard that lives
+  only in the subquery is re-evaluated against a stale snapshot. This is not theoretical —
+  `tests/postgres/atomicity.spec.ts` puts 32 concurrent racers against a `count < 10` guard, and
+  the Drizzle adapter admits all 32 where this one admits exactly 10. Both agree when the calls
+  are sequential, which is what isolates it to the race.
+- **Native joins are not supported.** `experimental.joins` throws rather than silently returning
+  empty relations; leave it off and the factory resolves relations with follow-up queries.
+
+### What the conformance suite proves
+
+`pnpm run test:postgres` runs sign-up/sign-in, session refresh past `updateAge`, email-OTP,
+organization create/invite/accept/list, MCP OAuth register/authorize/token, and database-backed
+rate limiting through **both** adapters, in per-arm Postgres schemas built from one committed
+DDL — then captures all 11 tables and asserts they match column-for-column, including each
+value's JavaScript type. It runs with the process in a non-UTC zone by default, because that is
+the only way the timezone class of bug is visible.
 
 ## Limitations
 

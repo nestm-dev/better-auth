@@ -7,7 +7,7 @@ corepack enable
 pnpm install
 ```
 
-Node >= 22.12 required.
+Node >= 22.13 required.
 
 ## Workflow
 
@@ -15,9 +15,20 @@ Node >= 22.12 required.
 pnpm run check           # oxlint + prettier + tsc --noEmit
 pnpm run test            # full e2e matrix: express + fastify
 pnpm run test:express    # one adapter
+pnpm run test:postgres   # TypeORM adapter conformance (needs Postgres, see below)
 pnpm run build           # tsdown → dist/
 pnpm run verify:pack     # build + publint
 ```
+
+The Postgres suite is opt-in and **fails closed** — it will not silently skip because a URL
+was forgotten:
+
+```bash
+docker compose up -d postgres
+PG_URL=postgresql://nestm:nestm@localhost:55437/nestm_better_auth pnpm run test:postgres
+```
+
+Set `PG_SKIP=1` to deliberately omit it. See `tests/postgres/README.md` for what it proves.
 
 Every change needs a changeset: `pnpm changeset`.
 
