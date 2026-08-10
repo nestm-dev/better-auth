@@ -7,6 +7,7 @@
   "changesets": [
     "bright-auth-types",
     "calm-request-state",
+    "clever-policies-compose",
     "initial-release",
     "public-metadata-interop",
     "quiet-routes-decide",
