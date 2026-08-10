@@ -9,8 +9,38 @@ interface RecoverableRequest extends IncomingMessage {
 export interface RecoveredBody {
 	/** Body parsed by the framework adapter before better-auth recovery. */
 	body: unknown;
-	/** Byte-exact body captured by Nest's `{ rawBody: true }` mode. */
+	/** Byte-exact body captured by Nest or read from an untouched stream. */
 	rawBody: Uint8Array | undefined;
+}
+
+/** Matches Fastify's default request body limit. */
+export const DEFAULT_ROUTE_POLICY_BODY_LIMIT = 1_048_576;
+
+export class RoutePolicyBodyTooLargeError extends Error {
+	constructor(readonly limit: number) {
+		super(`Route policy body exceeds the configured limit of ${String(limit)} bytes.`);
+		this.name = "RoutePolicyBodyTooLargeError";
+	}
+}
+
+export function resolveRoutePolicyBodyLimit(configured: number | undefined): number {
+	const limit = configured ?? DEFAULT_ROUTE_POLICY_BODY_LIMIT;
+	if (!Number.isSafeInteger(limit) || limit <= 0) {
+		throw new TypeError("routePolicyBodyLimit must be a positive safe integer.");
+	}
+	return limit;
+}
+
+function assertWithinPolicyBodyLimit(size: number, limit: number): void {
+	if (size > limit) throw new RoutePolicyBodyTooLargeError(limit);
+}
+
+function declaredContentLength(nodeReq: IncomingMessage): number | undefined {
+	const header = nodeReq.headers["content-length"];
+	const value = Array.isArray(header) ? header[0] : header;
+	if (value === undefined) return undefined;
+	const parsed = Number(value);
+	return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
 function parsePolicyBody(rawBody: Uint8Array, contentType: string | undefined): unknown {
@@ -69,20 +99,39 @@ export function recoverBody(frameworkReq: AdapterRequest, nodeReq: IncomingMessa
 export async function recoverBodyForPolicy(
 	frameworkReq: AdapterRequest,
 	nodeReq: IncomingMessage,
+	limit = DEFAULT_ROUTE_POLICY_BODY_LIMIT,
 ): Promise<RecoveredBody> {
 	const recovered = recoverBody(frameworkReq, nodeReq);
 	if (recovered.body !== undefined) return recovered;
 	if (recovered.rawBody !== undefined) {
+		assertWithinPolicyBodyLimit(recovered.rawBody.byteLength, limit);
 		return {
 			body: parsePolicyBody(recovered.rawBody, nodeReq.headers["content-type"]),
 			rawBody: recovered.rawBody,
 		};
 	}
 	if (!nodeReq.readable || nodeReq.readableEnded) return recovered;
+	const contentLength = declaredContentLength(nodeReq);
+	if (contentLength !== undefined && contentLength > limit) {
+		nodeReq.resume();
+		throw new RoutePolicyBodyTooLargeError(limit);
+	}
 
 	const chunks: Buffer[] = [];
-	for await (const chunk of nodeReq) {
-		chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+	let size = 0;
+	let exceeded = false;
+	for await (const chunk of nodeReq.iterator({ destroyOnReturn: false })) {
+		const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+		size += buffer.byteLength;
+		if (size > limit) {
+			exceeded = true;
+			break;
+		}
+		chunks.push(buffer);
+	}
+	if (exceeded) {
+		nodeReq.resume();
+		throw new RoutePolicyBodyTooLargeError(limit);
 	}
 	const rawBody = Buffer.concat(chunks);
 	(nodeReq as RecoverableRequest).body = rawBody.toString("utf8");

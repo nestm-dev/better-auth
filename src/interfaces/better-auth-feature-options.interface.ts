@@ -1,4 +1,5 @@
 import type { ModuleMetadata, Type } from "@nestjs/common";
+import type { BetterAuthRoutePolicyHandler } from "../policies/route-policy.ts";
 
 export interface BetterAuthFeatureOptions {
 	/**
@@ -9,10 +10,14 @@ export interface BetterAuthFeatureOptions {
 	 */
 	hooks?: Type<unknown>[];
 	/**
-	 * Modules whose exported providers the hook classes depend on. Hooks run
-	 * inside the feature host module, so non-global dependencies must be
-	 * imported here (or the hook class listed in your own module's
-	 * `providers` instead).
+	 * Singleton `@AuthRoutePolicy()` providers. Policies are also discovered
+	 * when listed directly in any module's `providers` array.
+	 */
+	routePolicies?: Type<BetterAuthRoutePolicyHandler>[];
+	/**
+	 * Modules whose exported providers the hook or policy classes depend on.
+	 * Providers run inside the feature host module, so non-global dependencies
+	 * must be imported here (or the class listed in your own module instead).
 	 */
 	imports?: ModuleMetadata["imports"];
 }

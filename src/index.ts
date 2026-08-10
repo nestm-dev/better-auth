@@ -33,11 +33,20 @@ export type {
 	BetterAuthCorsOptions,
 	BetterAuthInteropOptions,
 	BetterAuthRequestMiddleware,
-	BetterAuthRoutePolicy,
-	BetterAuthRoutePolicyContext,
 } from "./interfaces/better-auth-module-options.interface.ts";
 export type { BetterAuthFeatureOptions } from "./interfaces/better-auth-feature-options.interface.ts";
 export type { BetterAuthOptionsFactory } from "./interfaces/better-auth-options-factory.interface.ts";
+export {
+	deny,
+	type BetterAuthRoutePolicy,
+	type BetterAuthRoutePolicyContext,
+	type BetterAuthRoutePolicyDenial,
+	type BetterAuthRoutePolicyHandler,
+	type BetterAuthRoutePolicyHeadersInit,
+	type BetterAuthRoutePolicyOptions,
+	type BetterAuthRoutePolicyPathMatcher,
+	type BetterAuthRoutePolicyResult,
+} from "./policies/route-policy.ts";
 
 // Types
 export {
@@ -73,6 +82,7 @@ export {
 } from "./decorators/access-control.decorators.ts";
 export { Session, CurrentUser } from "./decorators/session.decorator.ts";
 export { InjectBetterAuth } from "./decorators/inject-better-auth.decorator.ts";
+export { AuthRoutePolicy } from "./decorators/route-policy.decorator.ts";
 
 // Hook decorators & registries
 export {

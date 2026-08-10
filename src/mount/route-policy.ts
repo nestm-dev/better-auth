@@ -1,5 +1,5 @@
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from "node:http";
-import type { BetterAuthRoutePolicyContext } from "../interfaces/better-auth-module-options.interface.ts";
+import type { BetterAuthRoutePolicyContext } from "../policies/route-policy.ts";
 import type { AdapterRequest } from "./request-utils.ts";
 import { getRequestPath, getRequestUrl } from "./request-utils.ts";
 import type { RecoveredBody } from "./body-recovery.ts";

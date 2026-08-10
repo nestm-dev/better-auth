@@ -8,7 +8,14 @@ import {
 } from "../better-auth.tokens.ts";
 import type { BetterAuthModuleOptions } from "../interfaces/better-auth-module-options.interface.ts";
 import type { AnyAuth } from "../types/auth.types.ts";
-import { recoverBody, recoverBodyForPolicy } from "./body-recovery.ts";
+import { BetterAuthRoutePolicyRegistry } from "../policies/route-policy-registry.service.ts";
+import {
+	recoverBody,
+	recoverBodyForPolicy,
+	resolveRoutePolicyBodyLimit,
+	RoutePolicyBodyTooLargeError,
+	type RecoveredBody,
+} from "./body-recovery.ts";
 import { resolveCorsHandler } from "./cors.ts";
 import {
 	getNodeRequest,
@@ -37,6 +44,7 @@ export class BetterAuthMountService {
 		@Inject(BETTER_AUTH_INSTANCE) private readonly auth: AnyAuth,
 		@Inject(BETTER_AUTH_MODULE_OPTIONS) private readonly options: BetterAuthModuleOptions,
 		@Inject(BETTER_AUTH_BASE_PATH) private readonly basePath: string,
+		private readonly routePolicies: BetterAuthRoutePolicyRegistry,
 	) {}
 
 	mount(): void {
@@ -63,6 +71,7 @@ export class BetterAuthMountService {
 		const cors = resolveCorsHandler(this.auth, this.options, this.logger);
 		const wrap = this.options.middleware;
 		const routePolicy = this.options.routePolicy;
+		const routePolicyBodyLimit = resolveRoutePolicyBodyLimit(this.options.routePolicyBodyLimit);
 
 		httpAdapter.use(
 			(req: AdapterRequest, res: AdapterResponse, next: (error?: unknown) => void) => {
@@ -74,10 +83,24 @@ export class BetterAuthMountService {
 				const nodeRes = getNodeResponse(res);
 				if (cors?.(nodeReq, nodeRes)) return;
 				const execute = async (): Promise<void> => {
-					if (routePolicy) {
-						const recoveredBody = await recoverBodyForPolicy(req, nodeReq);
+					if (routePolicy || this.routePolicies.size > 0) {
+						let recoveredBody: RecoveredBody;
+						try {
+							recoveredBody = await recoverBodyForPolicy(req, nodeReq, routePolicyBodyLimit);
+						} catch (error) {
+							if (!(error instanceof RoutePolicyBodyTooLargeError)) throw error;
+							await writeRoutePolicyResponse(
+								Response.json(
+									{ code: "PAYLOAD_TOO_LARGE", message: "Request body is too large." },
+									{ status: 413 },
+								),
+								nodeRes,
+								(nodeReq.method ?? "GET").toUpperCase(),
+							);
+							return;
+						}
 						const context = createRoutePolicyContext(req, nodeReq, basePath, recoveredBody);
-						const policyResponse = await routePolicy(context);
+						const policyResponse = await this.routePolicies.run(context, routePolicy);
 						if (policyResponse instanceof Response) {
 							await writeRoutePolicyResponse(policyResponse, nodeRes, context.method);
 							return;

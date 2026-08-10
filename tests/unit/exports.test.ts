@@ -22,6 +22,7 @@ const EXPECTED_VALUE_EXPORTS = [
 	"mergeHookContext",
 	"resolveAuthBasePath",
 	"normalizeBasePath",
+	"deny",
 	"getRequestFromContext",
 	"resolveContextKind",
 	// services & guard
@@ -41,6 +42,7 @@ const EXPECTED_VALUE_EXPORTS = [
 	"Session",
 	"CurrentUser",
 	"InjectBetterAuth",
+	"AuthRoutePolicy",
 	"Hook",
 	"BeforeHook",
 	"AfterHook",

@@ -29,11 +29,14 @@ import { BetterAuthMountService } from "./mount/mount.service.ts";
 import { resolveAuthBasePath } from "./mount/base-path.ts";
 import { Hook } from "./decorators/hook.decorators.ts";
 import { DatabaseHook } from "./decorators/database-hook.decorators.ts";
+import { AuthRoutePolicy } from "./decorators/route-policy.decorator.ts";
 import type { BetterAuthFeatureOptions } from "./interfaces/better-auth-feature-options.interface.ts";
 import type { BetterAuthModuleOptions } from "./interfaces/better-auth-module-options.interface.ts";
+import { BetterAuthRoutePolicyDiscoveryService } from "./policies/route-policy-discovery.service.ts";
+import { BetterAuthRoutePolicyRegistry } from "./policies/route-policy-registry.service.ts";
 import type { AnyAuth } from "./types/auth.types.ts";
 
-/** Host module for hook classes registered via `BetterAuthModule.forFeature`. */
+/** Host module for hook and route-policy classes registered through `forFeature`. */
 @Module({})
 export class BetterAuthFeatureModule {}
 
@@ -45,6 +48,15 @@ function assertHookClass(candidate: Type<unknown>): void {
 		throw new Error(
 			`BetterAuthModule.forFeature: '${candidate?.name ?? String(candidate)}' is not decorated ` +
 				"with @Hook() or @DatabaseHook().",
+		);
+	}
+}
+
+function assertRoutePolicyClass(candidate: Type<unknown>): void {
+	if (Reflect.getMetadata(AuthRoutePolicy.KEY, candidate) === undefined) {
+		throw new Error(
+			`BetterAuthModule.forFeature: '${candidate?.name ?? String(candidate)}' is not decorated ` +
+				"with @AuthRoutePolicy().",
 		);
 	}
 }
@@ -64,6 +76,8 @@ function assertHookClass(candidate: Type<unknown>): void {
 		BetterAuthHookRegistry,
 		BetterAuthDatabaseHookRegistry,
 		BetterAuthHookDiscoveryService,
+		BetterAuthRoutePolicyRegistry,
+		BetterAuthRoutePolicyDiscoveryService,
 		BetterAuthMountService,
 	],
 	exports: [
@@ -85,8 +99,10 @@ export class BetterAuthModule
 	constructor(
 		private readonly mountService: BetterAuthMountService,
 		private readonly hookDiscovery: BetterAuthHookDiscoveryService,
+		private readonly routePolicyDiscovery: BetterAuthRoutePolicyDiscoveryService,
 		private readonly hooks: BetterAuthHookRegistry,
 		private readonly databaseHooks: BetterAuthDatabaseHookRegistry,
+		private readonly routePolicies: BetterAuthRoutePolicyRegistry,
 		@Inject(BETTER_AUTH_INSTANCE) private readonly auth: AnyAuth,
 	) {
 		super();
@@ -104,14 +120,16 @@ export class BetterAuthModule
 	}
 
 	async onModuleInit(): Promise<void> {
-		this.mountService.mount();
 		this.hookDiscovery.scan();
+		this.routePolicyDiscovery.scan();
 		await installHookDispatchers(this.auth, this.hooks, this.databaseHooks, this.logger);
+		this.mountService.mount();
 	}
 
 	async onApplicationShutdown(): Promise<void> {
 		this.hooks.clear();
 		this.databaseHooks.clear();
+		this.routePolicies.clear();
 		await (this.auth.$context as Promise<unknown>).catch(() => undefined);
 	}
 
@@ -126,19 +144,21 @@ export class BetterAuthModule
 	}
 
 	/**
-	 * Registers `@Hook()` / `@DatabaseHook()` classes as providers. Purely
-	 * ergonomic — hook classes listed in any module's `providers` array are
-	 * discovered identically (and that is the right place for hooks that
-	 * inject feature-local providers).
+	 * Registers hook and HTTP route-policy classes as providers. Purely
+	 * ergonomic — decorated classes listed in any module's `providers` array
+	 * are discovered identically.
 	 */
 	static forFeature(options: BetterAuthFeatureOptions = {}): DynamicModule {
 		const hookClasses = options.hooks ?? [];
+		const routePolicyClasses = options.routePolicies ?? [];
 		for (const hookClass of hookClasses) assertHookClass(hookClass);
+		for (const policyClass of routePolicyClasses) assertRoutePolicyClass(policyClass);
+		const providers = [...new Set<Type<unknown>>([...hookClasses, ...routePolicyClasses])];
 		return {
 			module: BetterAuthFeatureModule,
 			imports: options.imports ?? [],
-			providers: [...hookClasses],
-			exports: [...hookClasses],
+			providers,
+			exports: providers,
 		};
 	}
 }

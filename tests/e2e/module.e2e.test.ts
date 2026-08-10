@@ -1,17 +1,20 @@
 import request from "supertest";
 import { afterEach, describe, expect, it } from "vitest";
-import { Injectable, Module } from "@nestjs/common";
+import { Injectable, Module, Scope } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import type { INestApplication } from "@nestjs/common";
 import {
 	BETTER_AUTH_INSTANCE,
+	AuthRoutePolicy,
 	BetterAuthModule,
 	BetterAuthService,
 	BeforeHook,
 	Hook,
+	deny,
 	type AnyAuth,
 	type AuthHookContext,
 	type BetterAuthModuleOptions,
+	type BetterAuthRoutePolicyHandler,
 } from "../../src/index.ts";
 import { createTestAuth, createTestAuthOptions } from "../shared/test-auth.ts";
 import { createTestApp } from "../shared/test-app.ts";
@@ -51,6 +54,57 @@ class FeatureBHook {
 	onSignIn(_ctx: AuthHookContext): void {
 		this.tracker.events.push("feature-b");
 	}
+}
+
+@Injectable()
+class PolicyDecision {
+	calls = 0;
+	shouldDeny(): boolean {
+		this.calls += 1;
+		return true;
+	}
+}
+
+@Module({ providers: [PolicyDecision], exports: [PolicyDecision] })
+class PolicyDecisionModule {}
+
+@AuthRoutePolicy({ path: "/sign-up/*", methods: ["POST"] })
+@Injectable()
+class FeatureRoutePolicy implements BetterAuthRoutePolicyHandler {
+	constructor(private readonly decision: PolicyDecision) {}
+	evaluate() {
+		return this.decision.shouldDeny() ? deny(403, { code: "FEATURE_POLICY" }) : undefined;
+	}
+}
+
+@AuthRoutePolicy()
+@Injectable({ scope: Scope.REQUEST })
+class RequestScopedPolicy implements BetterAuthRoutePolicyHandler {
+	evaluate(): void {}
+}
+
+@AuthRoutePolicy()
+@Injectable({ scope: Scope.TRANSIENT })
+class TransientPolicy implements BetterAuthRoutePolicyHandler {
+	evaluate(): void {}
+}
+
+@Injectable({ scope: Scope.REQUEST })
+class RequestDependency {}
+
+@AuthRoutePolicy()
+@Injectable()
+class NonStaticPolicy implements BetterAuthRoutePolicyHandler {
+	constructor(private readonly dependency: RequestDependency) {}
+	evaluate(): void {
+		void this.dependency;
+	}
+}
+
+@AuthRoutePolicy()
+@Injectable()
+class MissingEvaluatePolicy {
+	readonly evaluate = 1;
 }
 
 describe(`module registration (${testHttpAdapter})`, () => {
@@ -162,6 +216,66 @@ describe(`module registration (${testHttpAdapter})`, () => {
 		@Injectable()
 		class NotAHook {}
 		expect(() => BetterAuthModule.forFeature({ hooks: [NotAHook] })).toThrow(/not decorated/);
+	});
+
+	it("forFeature resolves route-policy dependencies from feature imports", async () => {
+		@Module({
+			imports: [
+				BetterAuthModule.forFeature({
+					routePolicies: [FeatureRoutePolicy],
+					imports: [PolicyDecisionModule],
+				}),
+			],
+		})
+		class PolicyFeatureModule {}
+
+		const moduleRef = await Test.createTestingModule({
+			imports: [BetterAuthModule.forRoot({ auth: createTestAuth() }), PolicyFeatureModule],
+		}).compile();
+		app = await initTestApplication(moduleRef.createNestApplication(createTestHttpAdapter()));
+
+		const response = await request(app.getHttpServer())
+			.post("/api/auth/sign-up/email")
+			.send({ email: "feature-policy@example.com", password: "strong-password", name: "Feature" });
+		expect(response.status).toBe(403);
+		expect(response.body).toEqual({ code: "FEATURE_POLICY" });
+		expect(app.get(PolicyDecision).calls).toBe(1);
+	});
+
+	it("forFeature rejects an undecorated route-policy class", () => {
+		@Injectable()
+		class UndecoratedPolicy implements BetterAuthRoutePolicyHandler {
+			evaluate(): void {}
+		}
+		expect(() => BetterAuthModule.forFeature({ routePolicies: [UndecoratedPolicy] })).toThrow(
+			/@AuthRoutePolicy/,
+		);
+	});
+
+	it("rejects a decorated route policy without evaluate() at bootstrap", async () => {
+		const moduleRef = await Test.createTestingModule({
+			imports: [BetterAuthModule.forRoot({ auth: createTestAuth() })],
+			providers: [MissingEvaluatePolicy],
+		}).compile();
+		app = moduleRef.createNestApplication(createTestHttpAdapter());
+		await expect(initTestApplication(app)).rejects.toThrow(/MissingEvaluatePolicy.*evaluate/);
+	});
+
+	it.each([
+		{ label: "request-scoped", policy: RequestScopedPolicy, dependencies: [] },
+		{ label: "transient", policy: TransientPolicy, dependencies: [] },
+		{
+			label: "dependent on request scope",
+			policy: NonStaticPolicy,
+			dependencies: [RequestDependency],
+		},
+	])("rejects a $label route policy at bootstrap", async ({ policy, dependencies }) => {
+		const moduleRef = await Test.createTestingModule({
+			imports: [BetterAuthModule.forRoot({ auth: createTestAuth() })],
+			providers: [policy, ...dependencies],
+		}).compile();
+		app = moduleRef.createNestApplication(createTestHttpAdapter());
+		await expect(initTestApplication(app)).rejects.toThrow(/must be singleton-scoped/);
 	});
 
 	it("a hook class listed in a feature module's own providers is discovered too", async () => {
