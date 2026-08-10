@@ -8,6 +8,7 @@
 - Global `BetterAuthGuard` with `@AllowAnonymous`, `@OptionalAuth`, `@Roles`, `@OrgRoles`, `@RequireActiveOrg`, `@UserHasPermission`, `@MemberHasPermission`
 - `@Session()` / `@CurrentUser()` parameter decorators, `@InjectBetterAuth()`
 - Class-based hooks with full NestJS DI: `@Hook` + `@BeforeHook`/`@AfterHook`, `@DatabaseHook` + `@BeforeCreate`/`@AfterUpdate`/…, discovered anywhere in your module graph — **no `hooks: {}` pre-declaration needed**
+- Composable HTTP route policies with full NestJS DI: `@AuthRoutePolicy({ path, methods, order })`
 - Works with every better-auth plugin; plugin types flow into `@Session()` and `BetterAuthService`
 
 ## Requirements
@@ -102,17 +103,18 @@ BetterAuthModule.forRootAsync({
 
 ### Module options
 
-| Option               | Mode   | Description                                                                                                                                                                                                                                                                                                          |
-| -------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `auth`               | option | Pre-built `betterAuth()` instance (best type inference).                                                                                                                                                                                                                                                             |
-| `options`            | option | Raw `BetterAuthOptions`; the module calls `betterAuth()` itself and pre-seeds `hooks`/`databaseHooks`.                                                                                                                                                                                                               |
-| `basePath`           | option | Override the mount path only (for edge cases like proxy rewrites) — better-auth's router still uses its own config, so to actually move the endpoints set better-auth's `basePath`/`baseURL`. Default mirrors better-auth: path inside `baseURL` → (`BETTER_AUTH_URL` when no `baseURL`) → `basePath` → `/api/auth`. |
-| `cors`               | option | `false` to disable, or `{ origin, credentials, methods, allowedHeaders, maxAge }`. Defaults to array `trustedOrigins`.                                                                                                                                                                                               |
-| `routePolicy`        | option | Adapter-independent HTTP policy that runs after auth-route CORS/body recovery and before `middleware` or better-auth. Return a Web `Response` to short-circuit.                                                                                                                                                      |
-| `middleware`         | option | `(req, res, run) => …` wrapper around the auth handler — for MikroORM `RequestContext` / AsyncLocalStorage setups.                                                                                                                                                                                                   |
-| `interop.publicKeys` | option | Metadata keys from other guards that mean public. Their presence skips session lookup with the same handler-level authorization override as `@AllowAnonymous()`.                                                                                                                                                     |
-| `isGlobal`           | extra  | Default `true`.                                                                                                                                                                                                                                                                                                      |
-| `disableGlobalGuard` | extra  | Skip the automatic `APP_GUARD` registration.                                                                                                                                                                                                                                                                         |
+| Option                 | Mode   | Description                                                                                                                                                                                                                                                                                                          |
+| ---------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auth`                 | option | Pre-built `betterAuth()` instance (best type inference).                                                                                                                                                                                                                                                             |
+| `options`              | option | Raw `BetterAuthOptions`; the module calls `betterAuth()` itself and pre-seeds `hooks`/`databaseHooks`.                                                                                                                                                                                                               |
+| `basePath`             | option | Override the mount path only (for edge cases like proxy rewrites) — better-auth's router still uses its own config, so to actually move the endpoints set better-auth's `basePath`/`baseURL`. Default mirrors better-auth: path inside `baseURL` → (`BETTER_AUTH_URL` when no `baseURL`) → `basePath` → `/api/auth`. |
+| `cors`                 | option | `false` to disable, or `{ origin, credentials, methods, allowedHeaders, maxAge }`. Defaults to array `trustedOrigins`.                                                                                                                                                                                               |
+| `routePolicy`          | option | Functional HTTP policy. It runs after auth-route CORS/body recovery and before DI route policies, `middleware`, or better-auth. Return a Web `Response` to short-circuit.                                                                                                                                            |
+| `routePolicyBodyLimit` | option | Maximum bytes buffered from an untouched request stream for policy body inspection. Default `1_048_576` (1 MiB); oversized requests receive `413 PAYLOAD_TOO_LARGE`.                                                                                                                                                 |
+| `middleware`           | option | `(req, res, run) => …` wrapper around the auth handler — for MikroORM `RequestContext` / AsyncLocalStorage setups.                                                                                                                                                                                                   |
+| `interop.publicKeys`   | option | Metadata keys from other guards that mean public. Their presence skips session lookup with the same handler-level authorization override as `@AllowAnonymous()`.                                                                                                                                                     |
+| `isGlobal`             | extra  | Default `true`.                                                                                                                                                                                                                                                                                                      |
+| `disableGlobalGuard`   | extra  | Skip the automatic `APP_GUARD` registration.                                                                                                                                                                                                                                                                         |
 
 ## Guard & decorators
 
@@ -275,44 +277,85 @@ const app = await NestFactory.create(AppModule, { rawBody: true });
 
 ## Route policy
 
-`routePolicy` is the HTTP-mount boundary for endpoint allowlists, self-service sign-up
-switches, and request-shape rules that must run before better-auth. It receives the uppercase
-method, original URL, full pathname, auth-relative path, Web `Headers`, parsed body, and the
-byte-exact raw body when recoverable:
+Route policies are singleton Nest providers for HTTP endpoint allowlists, self-service sign-up
+switches, and request-shape rules that must run before better-auth. They can inject application
+services and are discovered anywhere in the module graph. A path string is exact unless it ends
+in `/*`; arrays, regular expressions, predicates, method filters, and explicit ordering are also
+supported.
+
+Each policy receives a normalized context containing `method`, `url`, `pathname`, `authPath`,
+Web `headers`, parsed `body`, and byte-exact `rawBody` when it is recoverable.
+
+```ts
+@AuthRoutePolicy({ path: "/sign-up/*", order: -10 })
+@Injectable()
+export class DisableSelfSignupPolicy implements BetterAuthRoutePolicyHandler {
+	evaluate() {
+		return deny(403, {
+			code: "SIGN_UP_DISABLED",
+			message: "Self-service sign-up is disabled.",
+		});
+	}
+}
+
+@AuthRoutePolicy({
+	path: "/organization/accept-invitation",
+	methods: "POST",
+})
+@Injectable()
+export class RejectInvitationResendPolicy implements BetterAuthRoutePolicyHandler {
+	evaluate({ body }: BetterAuthRoutePolicyContext) {
+		if (typeof body === "object" && body !== null && "resend" in body && Boolean(body.resend)) {
+			return deny(400, {
+				code: "BAD_REQUEST",
+				message: "Resending is not allowed on this route.",
+			});
+		}
+	}
+}
+
+@Module({
+	imports: [
+		BetterAuthModule.forFeature({
+			routePolicies: [DisableSelfSignupPolicy, RejectInvitationResendPolicy],
+		}),
+	],
+})
+export class AuthPolicyModule {}
+```
+
+`deny(status, body, headers?)` creates a JSON response; a policy may instead return a Web
+`Response`, or return nothing to let evaluation continue. The first denial or returned `Response`
+wins. Policies with lower `order` run first, with stable registration order for ties. Providers
+must be singleton scoped and cannot depend on request-scoped providers. Pass dependency modules
+through `forFeature({ imports: [...] })`, or list a decorated policy in your own module's
+`providers` array.
+
+When an adapter has not parsed the body yet, policy recovery buffers at most
+`routePolicyBodyLimit` bytes (1 MiB by default). Requests over the limit receive a 413 response
+before any policy or module middleware runs.
+
+The existing functional option remains supported and runs first for compatibility:
 
 ```ts
 BetterAuthModule.forRoot({
 	auth,
-	routePolicy: ({ method, authPath, body }) => {
-		if (authPath.startsWith("/sign-up")) {
-			return Response.json(
-				{ code: "SIGN_UP_DISABLED", message: "Self-service sign-up is disabled." },
-				{ status: 403 },
-			);
-		}
-
-		if (
-			method === "POST" &&
-			authPath === "/organization/accept-invitation" &&
-			typeof body === "object" &&
-			body !== null &&
-			"resend" in body &&
-			Boolean(body.resend)
-		) {
-			return Response.json(
-				{ code: "BAD_REQUEST", message: "Resending is not allowed on this route." },
-				{ status: 400 },
-			);
-		}
-	},
+	routePolicy: ({ authPath }) =>
+		authPath === "/functional-disabled-route"
+			? Response.json({ code: "DISABLED" }, { status: 403 })
+			: undefined,
 });
 ```
 
-The ordering is CORS → body recovery → `routePolicy` → `middleware` → better-auth. An answered
-CORS preflight never reaches the policy. Returned responses are written directly at the raw
-auth mount, so Nest guards, interceptors, and exception filters do not rewrite them. Thrown or
-rejected errors are forwarded to the HTTP adapter's error path. Server-side `auth.api.*` calls
-do not pass through `routePolicy`.
+The complete ordering is CORS → body recovery → functional `routePolicy` → DI policies →
+`middleware` → better-auth. An answered CORS preflight never reaches policies. Returned responses
+are written directly at the raw auth mount, so Nest guards, interceptors, and exception filters do
+not rewrite them. Thrown or rejected errors are forwarded to the HTTP adapter's error path.
+Server-side `auth.api.*` calls do not pass through route policies.
+
+Use a route policy for HTTP-only enforcement, unknown mounted paths, or raw-body checks. Use a
+Better Auth `@BeforeHook` when the same rule must also apply to server-side `auth.api.*` calls and
+needs Better Auth's hook context/cookie protocol.
 
 ## CORS
 

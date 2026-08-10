@@ -1,5 +1,6 @@
 import type { BetterAuthOptions } from "better-auth";
 import type { AnyAuth } from "../types/auth.types.ts";
+import type { BetterAuthRoutePolicy } from "../policies/route-policy.ts";
 
 /**
  * CORS configuration for the mounted better-auth routes. When omitted,
@@ -30,40 +31,6 @@ export type BetterAuthRequestMiddleware = (
 	run: () => Promise<void>,
 ) => unknown;
 
-/**
- * Adapter-independent request information supplied to `routePolicy`.
- *
- * `url` is the original request target (including its query string),
- * `pathname` is the full application pathname, and `authPath` is relative to
- * the resolved better-auth mount path. `rawBody` is byte-exact when Nest was
- * bootstrapped with `{ rawBody: true }` or the adapter stream is still
- * untouched; it is otherwise `undefined`.
- */
-export interface BetterAuthRoutePolicyContext {
-	/** Uppercase HTTP method (`GET`, `POST`, ...). */
-	readonly method: string;
-	/** Original request target, including its query string. */
-	readonly url: string;
-	/** Full request pathname, without the query string. */
-	readonly pathname: string;
-	/** Path relative to the better-auth mount, always beginning with `/`. */
-	readonly authPath: string;
-	/** Request headers normalized to the Web `Headers` API. */
-	readonly headers: Headers;
-	/** Body parsed by the active Nest HTTP adapter, when available. */
-	readonly body: unknown;
-	/** Byte-exact request body when it is still recoverable. */
-	readonly rawBody: Uint8Array | undefined;
-}
-
-/**
- * Runs before request middleware and better-auth for mounted HTTP requests.
- * Returning a Web `Response` short-circuits the request.
- */
-export type BetterAuthRoutePolicy = (
-	context: BetterAuthRoutePolicyContext,
-) => Promise<Response | void> | Response | void;
-
 /** Metadata owned by another guard that {@link BetterAuthGuard} should honor. */
 export interface BetterAuthInteropOptions {
 	/**
@@ -84,6 +51,8 @@ interface BetterAuthModuleCommonOptions {
 	cors?: false | BetterAuthCorsOptions;
 	middleware?: BetterAuthRequestMiddleware;
 	routePolicy?: BetterAuthRoutePolicy;
+	/** Maximum bytes buffered from an untouched stream for route-policy body inspection. Default 1 MiB. */
+	routePolicyBodyLimit?: number;
 	interop?: BetterAuthInteropOptions;
 }
 

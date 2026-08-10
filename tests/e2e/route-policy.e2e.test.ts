@@ -1,12 +1,103 @@
 import request from "supertest";
 import { afterEach, describe, expect, it } from "vitest";
+import { Inject, Injectable } from "@nestjs/common";
 import type { INestApplication } from "@nestjs/common";
-import type { BetterAuthRoutePolicy, BetterAuthRoutePolicyContext } from "../../src/index.ts";
+import {
+	AuthRoutePolicy,
+	BETTER_AUTH_BASE_PATH,
+	deny,
+	type BetterAuthRoutePolicy,
+	type BetterAuthRoutePolicyContext,
+	type BetterAuthRoutePolicyHandler,
+} from "../../src/index.ts";
 import { createTestApp } from "../shared/test-app.ts";
 import { createTestAuth, uniqueUser } from "../shared/test-auth.ts";
 import { testHttpAdapter } from "../shared/http-adapter.ts";
 
 const ORIGIN = "https://station.example.com";
+
+@Injectable()
+class PolicyTracker {
+	events: string[] = [];
+	contexts: BetterAuthRoutePolicyContext[] = [];
+	basePaths: string[] = [];
+}
+
+@AuthRoutePolicy({ path: "/sign-up/*", methods: "post" })
+@Injectable()
+class DisableSelfSignupPolicy implements BetterAuthRoutePolicyHandler {
+	constructor(
+		private readonly tracker: PolicyTracker,
+		@Inject(BETTER_AUTH_BASE_PATH) private readonly basePath: string,
+	) {}
+
+	evaluate(context: BetterAuthRoutePolicyContext) {
+		this.tracker.events.push("disable-sign-up");
+		this.tracker.contexts.push(context);
+		this.tracker.basePaths.push(this.basePath);
+		return deny(
+			403,
+			{ code: "SIGN_UP_DISABLED", message: "Self-service sign-up is disabled." },
+			{ "x-route-policy": "di" },
+		);
+	}
+}
+
+@AuthRoutePolicy({ path: "/sign-up/email" })
+@Injectable()
+class RecordingPolicy implements BetterAuthRoutePolicyHandler {
+	constructor(private readonly tracker: PolicyTracker) {}
+
+	evaluate(context: BetterAuthRoutePolicyContext): void {
+		this.tracker.events.push("provider");
+		this.tracker.contexts.push(context);
+	}
+}
+
+@AuthRoutePolicy({ path: "/sign-up/email", order: 20 })
+@Injectable()
+class LatePolicy implements BetterAuthRoutePolicyHandler {
+	constructor(private readonly tracker: PolicyTracker) {}
+	evaluate(): void {
+		this.tracker.events.push("late");
+	}
+}
+
+@AuthRoutePolicy({ path: "/sign-up/email", order: -10 })
+@Injectable()
+class FirstPolicy implements BetterAuthRoutePolicyHandler {
+	constructor(private readonly tracker: PolicyTracker) {}
+	evaluate(): void {
+		this.tracker.events.push("first");
+	}
+}
+
+@AuthRoutePolicy({ path: "/sign-up/email" })
+@Injectable()
+class DenyingPolicy implements BetterAuthRoutePolicyHandler {
+	constructor(private readonly tracker: PolicyTracker) {}
+	evaluate() {
+		this.tracker.events.push("deny");
+		return deny(409, { code: "POLICY_DENIED" });
+	}
+}
+
+@AuthRoutePolicy()
+@Injectable()
+class CatchAllRecordingPolicy implements BetterAuthRoutePolicyHandler {
+	constructor(private readonly tracker: PolicyTracker) {}
+	evaluate(): void {
+		this.tracker.events.push("catch-all");
+	}
+}
+
+@AuthRoutePolicy({ path: "/sign-up/email" })
+@Injectable()
+class ThrowingPolicy implements BetterAuthRoutePolicyHandler {
+	evaluate(): never {
+		throw new Error("provider policy failure");
+	}
+}
 
 describe(`route policy (${testHttpAdapter})`, () => {
 	let app: INestApplication;
@@ -71,6 +162,173 @@ describe(`route policy (${testHttpAdapter})`, () => {
 		const serverSideResult = await auth.api.signUpEmail({ body: user });
 		expect(serverSideResult.user.email).toBe(user.email);
 		expect(policyCalls).toBe(1);
+	});
+
+	it("discovers an injected provider and denies only mounted HTTP traffic", async () => {
+		const auth = createTestAuth({ trustedOrigins: [ORIGIN] });
+		const user = uniqueUser();
+		let middlewareCalls = 0;
+		app = await createTestApp({
+			appOptions: { rawBody: true },
+			forRoot: {
+				auth,
+				middleware: async (_request, _response, run) => {
+					middlewareCalls += 1;
+					await run();
+				},
+			},
+			metadata: { providers: [PolicyTracker, DisableSelfSignupPolicy] },
+		});
+
+		const response = await request(app.getHttpServer())
+			.post("/api/auth/sign-up/email?source=invitation")
+			.set("Origin", ORIGIN)
+			.send(user);
+
+		expect(response.status).toBe(403);
+		expect(response.body).toEqual({
+			code: "SIGN_UP_DISABLED",
+			message: "Self-service sign-up is disabled.",
+		});
+		expect(response.headers["x-route-policy"]).toBe("di");
+		expect(response.headers["access-control-allow-origin"]).toBe(ORIGIN);
+		expect(middlewareCalls).toBe(0);
+
+		const tracker = app.get(PolicyTracker);
+		expect(tracker.events).toEqual(["disable-sign-up"]);
+		expect(tracker.basePaths).toEqual(["/api/auth"]);
+		expect(tracker.contexts[0]?.authPath).toBe("/sign-up/email");
+		expect(tracker.contexts[0]?.body).toEqual(user);
+		expect(JSON.parse(Buffer.from(tracker.contexts[0]?.rawBody ?? []).toString("utf8"))).toEqual(
+			user,
+		);
+
+		const serverSideResult = await auth.api.signUpEmail({ body: user });
+		expect(serverSideResult.user.email).toBe(user.email);
+		expect(tracker.events).toEqual(["disable-sign-up"]);
+	});
+
+	it("runs the legacy callback before providers and reuses one normalized context", async () => {
+		const events: string[] = [];
+		let legacyContext: BetterAuthRoutePolicyContext | undefined;
+		app = await createTestApp({
+			forRoot: {
+				auth: createTestAuth(),
+				routePolicy: (context) => {
+					events.push("legacy");
+					legacyContext = context;
+				},
+				middleware: async (_request, _response, run) => {
+					events.push("middleware");
+					await run();
+				},
+			},
+			metadata: {
+				providers: [
+					{ provide: PolicyTracker, useValue: { events, contexts: [], basePaths: [] } },
+					RecordingPolicy,
+				],
+			},
+		});
+
+		const user = uniqueUser();
+		const response = await request(app.getHttpServer()).post("/api/auth/sign-up/email").send(user);
+		expect(response.status).toBe(200);
+		expect(events).toEqual(["legacy", "provider", "middleware"]);
+		expect(app.get(PolicyTracker).contexts[0]).toBe(legacyContext);
+	});
+
+	it("lets a legacy denial short-circuit all provider policies", async () => {
+		let middlewareCalls = 0;
+		app = await createTestApp({
+			forRoot: {
+				auth: createTestAuth(),
+				routePolicy: () => new Response(null, { status: 423 }),
+				middleware: async (_request, _response, run) => {
+					middlewareCalls += 1;
+					await run();
+				},
+			},
+			metadata: { providers: [PolicyTracker, RecordingPolicy] },
+		});
+		const response = await request(app.getHttpServer())
+			.post("/api/auth/sign-up/email")
+			.send(uniqueUser());
+		expect(response.status).toBe(423);
+		expect(app.get(PolicyTracker).events).toEqual([]);
+		expect(middlewareCalls).toBe(0);
+	});
+
+	it("orders providers and stops after the first denial", async () => {
+		let middlewareCalls = 0;
+		app = await createTestApp({
+			forRoot: {
+				auth: createTestAuth(),
+				middleware: async (_request, _response, run) => {
+					middlewareCalls += 1;
+					await run();
+				},
+			},
+			metadata: {
+				providers: [PolicyTracker, LatePolicy, DenyingPolicy, FirstPolicy],
+			},
+		});
+		const response = await request(app.getHttpServer())
+			.post("/api/auth/sign-up/email")
+			.send(uniqueUser());
+		expect(response.status).toBe(409);
+		expect(response.body).toEqual({ code: "POLICY_DENIED" });
+		expect(app.get(PolicyTracker).events).toEqual(["first", "deny"]);
+		expect(middlewareCalls).toBe(0);
+	});
+
+	it("forwards provider errors without running middleware", async () => {
+		let middlewareCalls = 0;
+		app = await createTestApp({
+			forRoot: {
+				auth: createTestAuth(),
+				middleware: async (_request, _response, run) => {
+					middlewareCalls += 1;
+					await run();
+				},
+			},
+			metadata: { providers: [ThrowingPolicy] },
+		});
+		const response = await request(app.getHttpServer())
+			.post("/api/auth/sign-up/email")
+			.send(uniqueUser());
+		expect(response.status).toBe(500);
+		expect(middlewareCalls).toBe(0);
+	});
+
+	it("returns 413 before policies when untouched body recovery exceeds its limit", async () => {
+		let middlewareCalls = 0;
+		app = await createTestApp({
+			appOptions: { bodyParser: false },
+			forRoot: {
+				auth: createTestAuth({ trustedOrigins: [ORIGIN] }),
+				routePolicyBodyLimit: 32,
+				middleware: async (_request, _response, run) => {
+					middlewareCalls += 1;
+					await run();
+				},
+			},
+			metadata: { providers: [PolicyTracker, CatchAllRecordingPolicy] },
+		});
+
+		const response = await request(app.getHttpServer())
+			.post("/api/auth/sign-up/email")
+			.set("Origin", ORIGIN)
+			.send(uniqueUser());
+
+		expect(response.status).toBe(413);
+		expect(response.body).toEqual({
+			code: "PAYLOAD_TOO_LARGE",
+			message: "Request body is too large.",
+		});
+		expect(response.headers["access-control-allow-origin"]).toBe(ORIGIN);
+		expect(app.get(PolicyTracker).events).toEqual([]);
+		expect(middlewareCalls).toBe(0);
 	});
 
 	it("receives parsed and byte-exact URL-encoded bodies", async () => {
@@ -175,6 +433,7 @@ describe(`route policy (${testHttpAdapter})`, () => {
 					return new Response(null, { status: 418 });
 				},
 			},
+			metadata: { providers: [PolicyTracker, CatchAllRecordingPolicy] },
 		});
 
 		const response = await request(app.getHttpServer())
@@ -185,5 +444,6 @@ describe(`route policy (${testHttpAdapter})`, () => {
 		expect(response.status).toBe(204);
 		expect(response.headers["access-control-allow-origin"]).toBe(ORIGIN);
 		expect(policyCalls).toBe(0);
+		expect(app.get(PolicyTracker).events).toEqual([]);
 	});
 });
