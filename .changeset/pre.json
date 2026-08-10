@@ -9,6 +9,7 @@
     "calm-request-state",
     "initial-release",
     "public-metadata-interop",
-    "quiet-routes-decide"
+    "quiet-routes-decide",
+    "typeorm-database-adapter"
   ]
 }
