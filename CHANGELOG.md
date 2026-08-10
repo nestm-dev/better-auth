@@ -1,5 +1,15 @@
 # @nestm/better-auth
 
+## 0.1.0-alpha.7
+
+### Minor Changes
+
+- a71a12f: Add ordered, DI-backed HTTP route-policy providers through `@AuthRoutePolicy()` and
+  `BetterAuthModule.forFeature({ routePolicies })`, including exact/prefix/list/RegExp/predicate
+  matching and structured `deny()` responses. The existing functional `routePolicy` option remains
+  supported and runs first for backward compatibility. Untouched policy body recovery is capped by
+  the configurable `routePolicyBodyLimit` (1 MiB by default) and returns 413 when exceeded.
+
 ## 0.1.0-alpha.6
 
 ### Minor Changes
