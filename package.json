@@ -24,7 +24,7 @@
 	"type": "module",
 	"sideEffects": false,
 	"engines": {
-		"node": ">=22.12.0"
+		"node": ">=22.13.0"
 	},
 	"packageManager": "pnpm@11.20.0",
 	"types": "./dist/index.d.mts",
@@ -33,6 +33,11 @@
 			"types": "./dist/index.d.mts",
 			"import": "./dist/index.mjs",
 			"default": "./dist/index.mjs"
+		},
+		"./typeorm": {
+			"types": "./dist/typeorm/index.d.mts",
+			"import": "./dist/typeorm/index.mjs",
+			"default": "./dist/typeorm/index.mjs"
 		},
 		"./package.json": "./package.json"
 	},
@@ -59,6 +64,7 @@
 		"test:fastify": "cross-env TEST_HTTP_ADAPTER=fastify vitest run",
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage",
+		"test:postgres": "tsc -p tests/postgres/tsconfig.json && cross-env TZ=America/Sao_Paulo vitest run --config vitest.postgres.config.ts",
 		"verify:pack": "pnpm run build && publint --strict && pnpm run test:packed-types",
 		"test:packed-types": "tsc -p tests/packed-types/tsconfig.json",
 		"prepack": "pnpm run build",
@@ -72,7 +78,8 @@
 		"@nestjs/websockets": "^12.0.0-alpha.5",
 		"better-auth": ">=1.6.0 <2.0.0",
 		"reflect-metadata": "^0.2.2",
-		"rxjs": "^7.8.0"
+		"rxjs": "^7.8.0",
+		"typeorm": "^1.1.0"
 	},
 	"peerDependenciesMeta": {
 		"@nestjs/graphql": {
@@ -80,9 +87,13 @@
 		},
 		"@nestjs/websockets": {
 			"optional": true
+		},
+		"typeorm": {
+			"optional": true
 		}
 	},
 	"devDependencies": {
+		"@better-auth/drizzle-adapter": "1.6.26",
 		"@changesets/cli": "2.31.1",
 		"@nestjs/common": "12.0.0-alpha.5",
 		"@nestjs/core": "12.0.0-alpha.5",
@@ -92,13 +103,17 @@
 		"@nestjs/testing": "12.0.0-alpha.5",
 		"@nestjs/websockets": "12.0.0-alpha.5",
 		"@types/node": "26.1.2",
+		"@types/pg": "^8.21.0",
 		"@types/supertest": "7.2.1",
 		"@vitest/coverage-v8": "4.1.10",
 		"better-auth": "1.6.26",
 		"cross-env": "10.1.0",
+		"drizzle-orm": "^0.45.2",
 		"fastify": "5.11.2",
 		"oxlint": "1.77.0",
 		"oxlint-tsgolint": "^7.0.2001",
+		"pg": "^8.23.0",
+		"postgres": "^3.4.9",
 		"prettier": "3.9.6",
 		"publint": "0.3.23",
 		"reflect-metadata": "0.2.2",
@@ -107,6 +122,7 @@
 		"socket.io-client": "4.8.3",
 		"supertest": "7.2.2",
 		"tsdown": "0.22.14",
+		"typeorm": "1.1.0",
 		"typescript": "7.0.2",
 		"vitest": "4.1.10"
 	}

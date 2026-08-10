@@ -1,7 +1,7 @@
 import { defineConfig } from "tsdown";
 
 export default defineConfig({
-	entry: ["src/index.ts"],
+	entry: ["src/index.ts", "src/typeorm/index.ts"],
 	format: ["esm"],
 	platform: "node",
 	target: "node22",
@@ -9,5 +9,7 @@ export default defineConfig({
 	sourcemap: true,
 	clean: true,
 	fixedExtension: true,
-	deps: { neverBundle: [/^@nestjs\//, /^better-auth(\/|$)/, "reflect-metadata", "rxjs"] },
+	deps: {
+		neverBundle: [/^@nestjs\//, /^better-auth(\/|$)/, "reflect-metadata", "rxjs", "typeorm"],
+	},
 });

@@ -1,0 +1,25 @@
+name: nestm-better-auth
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: nestm_better_auth
+      POSTGRES_USER: nestm
+      POSTGRES_PASSWORD: nestm
+      # The conformance suite deliberately runs the Node process in a NON-UTC zone to expose
+      # driver timezone bugs. The SERVER stays on UTC, because the committed DDL uses
+      # `timestamp DEFAULT now()` and `now()::timestamp` renders in the server's zone — a
+      # non-UTC server would store local wall-clock in a column both arms read back as UTC.
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      # 55437, because 55435 belongs to @nestm/crud and 5432 to the tenant database.
+      - "55437:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nestm -d nestm_better_auth"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    tmpfs:
+      - /var/lib/postgresql
