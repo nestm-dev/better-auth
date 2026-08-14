@@ -28,6 +28,10 @@ const EXPECTED_VALUE_EXPORTS = [
 	// services & guard
 	"BetterAuthService",
 	"BetterAuthGuard",
+	"MutationOriginGuard",
+	"MUTATION_ORIGIN_GUARD_OPTIONS",
+	"canonicalizeTrustedMutationOrigin",
+	"canonicalizeTrustedMutationOrigins",
 	"BetterAuthHookRegistry",
 	"BetterAuthDatabaseHookRegistry",
 	// decorators

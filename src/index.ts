@@ -66,6 +66,14 @@ export {
 export { BetterAuthService } from "./services/better-auth.service.ts";
 export { BetterAuthGuard } from "./guards/better-auth.guard.ts";
 export { createAuthError, type AuthErrorStatus } from "./guards/auth-errors.ts";
+export {
+	MUTATION_ORIGIN_GUARD_OPTIONS,
+	MutationOriginGuard,
+	canonicalizeTrustedMutationOrigin,
+	canonicalizeTrustedMutationOrigins,
+	type MutationOriginCanonicalizationOptions,
+	type MutationOriginGuardOptions,
+} from "./guards/mutation-origin.guard.ts";
 
 // Access-control decorators
 export {

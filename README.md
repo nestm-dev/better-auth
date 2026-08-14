@@ -157,6 +157,15 @@ Notes:
   `@Session()` populated.
 - `@Roles` and `@OrgRoles` are deliberately separate domains: an organization owner does not
   pass `@Roles('admin')`.
+- `session.activeOrganizationId` is a tenant selector, not proof of current membership or a
+  database-isolation boundary; Better Auth guards, hooks, and route policies do not scope domain
+  queries. When composing with
+  [`@nestm/tenant`](https://github.com/nestm-dev/tenant#secure-quick-start), keep the adapter in the
+  application: set `disableGlobalGuard: true` and `disableAutomaticGuard: true`, then explicitly
+  run `BetterAuthGuard` → `TenantGuard` → permissions (or use one composite guard), resolve only
+  from the guard-populated session with `CallbackTenantResolver`—without a client header
+  fallback—and re-check `(organizationId, userId)` membership in `TenantAccessPolicy` on every
+  request.
 - Authorization is fail-closed: a class-level `@AllowAnonymous`/`@OptionalAuth` is ignored on
   handlers that declare their own `@Roles`/`@OrgRoles`/`@RequireActiveOrg`/permission
   requirements (a handler-level `@AllowAnonymous` still wins).
@@ -166,6 +175,40 @@ Notes:
 - WebSocket gateways need `@UseGuards(BetterAuthGuard)` explicitly (Nest's `APP_GUARD` does
   not cover gateways). The guard understands http, ws, and rpc contexts; GraphQL is wired but
   currently **experimental** (the `@nestjs/graphql` v12-compatible stack is not yet stable).
+
+### State-changing controller origins
+
+Cookie-authenticated controller routes also need a CSRF boundary. Register the exported
+`MutationOriginGuard` as an application guard with an exact origin allowlist:
+
+```ts
+import { Module } from "@nestjs/common";
+import { APP_GUARD } from "@nestjs/core";
+import { MUTATION_ORIGIN_GUARD_OPTIONS, MutationOriginGuard } from "@nestm/better-auth";
+
+@Module({
+	providers: [
+		{
+			provide: MUTATION_ORIGIN_GUARD_OPTIONS,
+			useValue: { trustedOrigins: ["https://studio.example.com"] },
+		},
+		MutationOriginGuard,
+		{ provide: APP_GUARD, useExisting: MutationOriginGuard },
+	],
+})
+export class SecurityModule {}
+```
+
+For `POST`, `PUT`, `PATCH`, `DELETE`, and other non-safe HTTP methods, the guard requires either
+an exact trusted canonical `Origin` or `Sec-Fetch-Site: same-origin`. Invalid, repeated, opaque
+(`null`), non-HTTP, or untrusted origins fail with `403`; malformed Fetch Metadata also fails
+closed. `GET`, `HEAD`, and `OPTIONS` are unaffected. An explicitly trusted cross-site origin wins
+over `Sec-Fetch-Site: cross-site`, which permits a deliberately separate browser frontend.
+
+Trusted origins must use HTTPS. Local development may opt into plain HTTP with
+`allowLoopbackHttp: true`; this accepts only `localhost`, `*.localhost`, `127.0.0.0/8`, and
+`[::1]`. The guard affects Nest HTTP controller routes, while mounted Better Auth endpoints keep
+Better Auth's own origin validation.
 
 ## Hooks with NestJS DI
 
@@ -389,13 +432,19 @@ import { typeormAdapter } from "@nestm/better-auth/typeorm";
 BetterAuthModule.forRootAsync({
 	inject: [DataSource],
 	useFactory: (dataSource: DataSource) => ({
-		options: { database: typeormAdapter(dataSource) },
+		options: { database: typeormAdapter(dataSource, { transaction: true }) },
 	}),
 });
 ```
 
 `typeorm` is an **optional** peer and the built entry imports it only as a type — nothing is
 loaded at runtime, so installing this package without TypeORM stays free.
+
+The adapter's public boundary is a library-owned structural capability contract rather than
+TypeORM's nominal `DataSource` class. A linked workspace can therefore pass its own compatible
+`DataSource` directly even when the package manager resolves TypeORM at a second physical path.
+The adapter validates the metadata and manager capabilities it consumes at runtime; no consumer
+cast or shared-module-path workaround is required.
 
 ### Requirements
 
@@ -431,6 +480,10 @@ typeormAdapter(dataSource, { entities: { rateLimit: ThrottleBucket } });
 | `transaction` | `false`              | Enables Better Auth's `transaction()`, backed by `dataSource.transaction()`.                    |
 | `usePlural`   | `false`              | Appends `s` to model names during resolution.                                                   |
 | `debugLogs`   | `false`              | Forwarded to the adapter factory.                                                               |
+
+Enable `transaction` in production so Better Auth's multi-step user/account/session writes are
+atomic. It remains opt-in for compatibility with applications that already own the transaction
+through `getManager`.
 
 `getManager` is resolved **per statement**, not once at construction — an adapter is built at
 application boot, long before any request context exists:

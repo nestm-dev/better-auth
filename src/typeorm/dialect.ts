@@ -1,5 +1,5 @@
 import { BetterAuthError } from "better-auth";
-import type { DataSource } from "typeorm";
+import type { TypeormDataSource } from "./types.ts";
 
 /**
  * The TypeORM driver types this adapter emits verified SQL for.
@@ -43,7 +43,7 @@ export interface TypeormDialect {
 	parameter(index: number): string;
 }
 
-export function resolveDialect(dataSource: DataSource): TypeormDialect {
+export function resolveDialect(dataSource: TypeormDataSource): TypeormDialect {
 	const driverType = String(dataSource.options.type);
 	if (!VERIFIED_DRIVER_TYPES.has(driverType)) {
 		throw new BetterAuthError(
