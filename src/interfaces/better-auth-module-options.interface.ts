@@ -1,6 +1,7 @@
 import type { BetterAuthOptions } from "better-auth";
 import type { AnyAuth } from "../types/auth.types.ts";
 import type { BetterAuthRoutePolicy } from "../policies/route-policy.ts";
+import type { BetterAuthOrganizationLifecycleCoordinator } from "./better-auth-organization-lifecycle.interface.ts";
 
 /**
  * CORS configuration for the mounted better-auth routes. When omitted,
@@ -54,6 +55,11 @@ interface BetterAuthModuleCommonOptions {
 	/** Maximum bytes buffered from an untouched stream for route-policy body inspection. Default 1 MiB. */
 	routePolicyBodyLimit?: number;
 	interop?: BetterAuthInteropOptions;
+	/**
+	 * Optional serialization boundary for organization membership and invitation
+	 * mutations made through `BetterAuthOrganizationService`.
+	 */
+	organizationLifecycle?: BetterAuthOrganizationLifecycleCoordinator;
 }
 
 /**

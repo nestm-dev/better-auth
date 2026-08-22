@@ -8,9 +8,8 @@ import type {
 	CustomAdapter,
 } from "better-auth/adapters";
 import type { BetterAuthOptions } from "better-auth/types";
-import type { DataSource, EntityManager } from "typeorm";
-
 import { resolveDialect } from "./dialect.ts";
+import { executeQuery, requireEntityManager } from "./capabilities.ts";
 import { TypeormModelRegistry } from "./registry.ts";
 import {
 	boundedInteger,
@@ -21,7 +20,7 @@ import {
 	tableRef,
 } from "./sql.ts";
 import type { SqlContext } from "./sql.ts";
-import type { TypeormAdapterConfig } from "./types.ts";
+import type { TypeormAdapterConfig, TypeormDataSource, TypeormEntityManager } from "./types.ts";
 
 type Row = Record<string, unknown>;
 
@@ -75,7 +74,7 @@ interface StatementResult {
  * ```
  */
 export function typeormAdapter(
-	dataSource: DataSource,
+	dataSource: TypeormDataSource,
 	config: TypeormAdapterConfig = {},
 ): AdapterFactory<BetterAuthOptions> {
 	const dialect = resolveDialect(dataSource);
@@ -87,7 +86,7 @@ export function typeormAdapter(
 	let lazyOptions: BetterAuthOptions | null = null;
 
 	const createCustomAdapter =
-		(resolveManager: () => EntityManager): AdapterFactoryOptions["adapter"] =>
+		(resolveManager: () => TypeormEntityManager): AdapterFactoryOptions["adapter"] =>
 		({ schema, getFieldName, getDefaultModelName, getFieldAttributes }) => {
 			/**
 			 * TypeORM's Postgres query runner returns `raw.rows` for `SELECT`/`INSERT` but the
@@ -101,7 +100,7 @@ export function typeormAdapter(
 				parameters: unknown[],
 				shape: "rows" | "rowsWithCount",
 			): Promise<StatementResult> => {
-				const raw: unknown = await resolveManager().query(sql, parameters);
+				const raw = await executeQuery(resolveManager(), sql, parameters);
 				if (shape === "rows") {
 					if (!Array.isArray(raw)) return { rows: [], affected: 0 };
 					const rows = raw as Row[];
@@ -446,18 +445,27 @@ export function typeormAdapter(
 		},
 
 		transaction: config.transaction
-			? (callback) =>
-					dataSource.transaction((manager) =>
-						callback(
+			? (callback) => {
+					const runWithManager = (manager: unknown) => {
+						const transactionalManager = requireEntityManager(manager);
+						return callback(
 							createAdapterFactory({
-								// The inner adapter is pinned to the transactional manager, and
-								// `getManager` is deliberately not consulted: a statement that resolved
-								// its own manager here would run outside the transaction it was handed.
-								adapter: createCustomAdapter(() => manager),
+								// Pin every inner statement to one manager. Resolving the hook again from
+								// inside the callback could let a context change split one logical unit of work.
+								adapter: createCustomAdapter(() => transactionalManager),
 								config: { ...adapterConfig, transaction: false },
 							})(lazyOptions ?? {}),
-						),
-					)
+						);
+					};
+
+					// A defined scoped manager means the application already owns the transaction
+					// (typically through AsyncLocalStorage). Join it so Better Auth writes can be
+					// committed or rolled back atomically with application audit/outbox records.
+					const scopedManager = config.getManager?.();
+					if (scopedManager !== undefined) return runWithManager(scopedManager);
+
+					return Reflect.apply(dataSource.transaction, dataSource, [runWithManager]);
+				}
 			: false,
 	};
 

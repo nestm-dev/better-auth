@@ -118,7 +118,10 @@ export class BetterAuthGuard implements CanActivate {
 			// Idempotency: APP_GUARD + @UseGuards on the same route must not double-fetch.
 			session = (request.session ?? null) as GuardSession | null;
 		} else {
-			session = ((await this.auth.api.getSession({ headers })) ?? null) as GuardSession | null;
+			session = ((await this.auth.api.getSession({
+				headers,
+				query: { disableCookieCache: true },
+			})) ?? null) as GuardSession | null;
 			if (request) {
 				request.session = session;
 				request.user = session?.user ?? null;
@@ -136,8 +139,16 @@ export class BetterAuthGuard implements CanActivate {
 		const orgRoles = this.reflector.getAllAndOverride(OrgRoles, targets);
 		const requireActiveOrg =
 			this.reflector.getAllAndOverride(RequireActiveOrg, targets) === true || !!orgRoles;
-		if (requireActiveOrg && !session.session?.activeOrganizationId) {
-			throw await createAuthError(kind, "FORBIDDEN", "Active organization is required");
+		const activeOrganizationId = session.session?.activeOrganizationId;
+		let activeMemberRole: string | string[] | null | undefined;
+		if (requireActiveOrg) {
+			if (!activeOrganizationId) {
+				throw await createAuthError(kind, "FORBIDDEN", "Active organization is required");
+			}
+			activeMemberRole = await this.getActiveMemberRole(headers, activeOrganizationId);
+		}
+		if (requireActiveOrg && activeMemberRole === null) {
+			throw await createAuthError(kind, "FORBIDDEN", "Active organization membership is required");
 		}
 
 		const roles = this.reflector.getAllAndOverride(Roles, targets);
@@ -146,8 +157,7 @@ export class BetterAuthGuard implements CanActivate {
 		}
 
 		if (orgRoles) {
-			const memberRole = await this.getActiveMemberRole(headers);
-			if (!matchesRequiredRole(memberRole, orgRoles)) {
+			if (!matchesRequiredRole(activeMemberRole, orgRoles)) {
 				throw await createAuthError(kind, "FORBIDDEN", "Insufficient organization permissions");
 			}
 		}
@@ -159,7 +169,13 @@ export class BetterAuthGuard implements CanActivate {
 
 		const memberPermission = this.reflector.getAllAndOverride(MemberHasPermission, targets);
 		if (memberPermission) {
-			await this.checkPermission(kind, headers, memberPermission, "hasPermission");
+			await this.checkPermission(
+				kind,
+				headers,
+				memberPermission,
+				"hasPermission",
+				session.session?.activeOrganizationId,
+			);
 		}
 
 		return true;
@@ -188,19 +204,25 @@ export class BetterAuthGuard implements CanActivate {
 		this.logger.error(message);
 	}
 
-	private async getActiveMemberRole(headers: Headers): Promise<string | string[] | null> {
+	private async getActiveMemberRole(
+		headers: Headers,
+		organizationId: string,
+	): Promise<string | string[] | null> {
 		const api = this.api();
 		try {
 			if (typeof api.getActiveMemberRole === "function") {
 				const result = (await (api.getActiveMemberRole as (input: unknown) => Promise<unknown>)({
 					headers,
+					query: { organizationId },
 				})) as { role?: string | string[] } | null;
 				return result?.role ?? null;
 			}
 			if (typeof api.getActiveMember === "function") {
 				const result = (await (api.getActiveMember as (input: unknown) => Promise<unknown>)({
 					headers,
-				})) as { role?: string | string[] } | null;
+					query: { organizationId },
+				})) as { organizationId?: string; role?: string | string[] } | null;
+				if (result?.organizationId !== organizationId) return null;
 				return result?.role ?? null;
 			}
 			this.logMisconfigurationOnce(
@@ -222,6 +244,7 @@ export class BetterAuthGuard implements CanActivate {
 		headers: Headers,
 		options: PermissionCheckOptions,
 		endpoint: "userHasPermission" | "hasPermission",
+		organizationId?: string,
 	): Promise<void> {
 		const api = this.api();
 		const fn = api[endpoint];
@@ -235,12 +258,19 @@ export class BetterAuthGuard implements CanActivate {
 		}
 		let success = false;
 		try {
+			if (endpoint === "hasPermission" && !organizationId) {
+				throw new Error("The authoritative session has no active organization.");
+			}
+			const organizationBody =
+				endpoint === "hasPermission" ? { organizationId } : ({} satisfies Record<string, never>);
 			// With an explicit `role`, omit the session headers: better-auth
 			// prefers the session user over `body.role`, which would silently
 			// evaluate the caller's own role instead of the requested one.
 			const input = options.role
-				? { body: { permissions: options.permissions, role: options.role } }
-				: { body: { permissions: options.permissions }, headers };
+				? {
+						body: { permissions: options.permissions, role: options.role, ...organizationBody },
+					}
+				: { body: { permissions: options.permissions, ...organizationBody }, headers };
 			const result = (await (fn as (input: unknown) => Promise<unknown>)(input)) as {
 				success?: boolean;
 			} | null;

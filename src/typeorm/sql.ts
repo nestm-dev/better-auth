@@ -1,9 +1,9 @@
 import { BetterAuthError } from "better-auth";
 import type { CleanedWhere } from "better-auth/adapters";
-import type { EntityMetadata } from "typeorm";
 
 import type { TypeormDialect } from "./dialect.ts";
 import type { TypeormModelRegistry } from "./registry.ts";
+import type { TypeormEntityMetadata } from "./types.ts";
 
 /**
  * Accumulates bound parameters so placeholder numbering stays correct across a whole
@@ -56,7 +56,7 @@ export interface SqlContext {
 	readonly isDateField: (fieldName: string) => boolean;
 }
 
-export function tableRef(dialect: TypeormDialect, entity: EntityMetadata): string {
+export function tableRef(dialect: TypeormDialect, entity: TypeormEntityMetadata): string {
 	const table = dialect.escape(entity.tableName);
 	return entity.schema ? `${dialect.escape(entity.schema)}.${table}` : table;
 }

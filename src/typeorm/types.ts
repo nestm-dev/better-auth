@@ -1,5 +1,4 @@
 import type { AdapterFactoryConfig } from "better-auth/adapters";
-import type { EntityManager, EntitySchema } from "typeorm";
 
 /**
  * Anything `DataSource.getMetadata()` accepts as an entity handle.
@@ -8,7 +7,51 @@ import type { EntityManager, EntitySchema } from "typeorm";
  * admits a `{ type, name }` form.
  */
 // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type -- TypeORM types a decorated entity class as `Function`.
-export type TypeormEntityTarget = Function | EntitySchema | string;
+export type TypeormEntityTarget = Function | TypeormEntitySchema | string;
+
+/** Structural EntitySchema identity used only as a DataSource lookup handle. */
+export interface TypeormEntitySchema {
+	readonly options: { readonly name: string };
+}
+
+export interface TypeormColumnMetadata {
+	readonly propertyName: string;
+	readonly databaseName: string;
+	readonly type: unknown;
+}
+
+export interface TypeormEntityMetadata {
+	readonly targetName: string;
+	readonly tableName: string;
+	readonly schema?: string;
+	readonly columns: readonly TypeormColumnMetadata[];
+}
+
+export type TypeormCallableCapability = (...parameters: never[]) => unknown;
+
+/** Minimal, structurally portable manager capability used by the adapter. */
+export interface TypeormEntityManager {
+	readonly query: TypeormCallableCapability;
+}
+
+/**
+ * Minimal DataSource capability required by the adapter.
+ *
+ * Using TypeORM's full DataSource class here leaks its private nominal brand
+ * into consumers. That makes identical peer versions installed at two linked
+ * workspace paths fail assignability even though the runtime API is the same.
+ */
+export interface TypeormDataSource {
+	readonly options: { readonly type: unknown };
+	readonly driver: {
+		escape(identifier: string): string;
+		createParameter(parameterName: string, index: number): string;
+	};
+	readonly entityMetadatas: readonly unknown[];
+	readonly manager: TypeormEntityManager;
+	readonly getMetadata: TypeormCallableCapability;
+	readonly transaction: TypeormCallableCapability;
+}
 
 export interface TypeormAdapterConfig {
 	/**
@@ -41,13 +84,16 @@ export interface TypeormAdapterConfig {
 	 * construction: an adapter is built at application boot, long before any request context
 	 * exists.
 	 *
-	 * Statements issued inside `transaction()` ignore this hook and use the transactional
-	 * manager, because a callback that escaped its own transaction would defeat the point.
+	 * When `transaction` is enabled, a defined manager also signals that the application already
+	 * owns the transaction. Better Auth's transaction callback joins and pins that manager rather
+	 * than opening an independent `dataSource.transaction()`. Return `undefined` whenever no
+	 * application transaction is active.
 	 */
-	getManager?: (() => EntityManager | undefined) | undefined;
+	getManager?: (() => TypeormEntityManager | undefined) | undefined;
 
 	/**
-	 * Enable Better Auth's `transaction()` support, backed by `dataSource.transaction()`.
+	 * Enable Better Auth's `transaction()` support. It joins a manager returned by `getManager`,
+	 * or opens a `dataSource.transaction()` when the hook is absent or returns `undefined`.
 	 *
 	 * @default false
 	 */

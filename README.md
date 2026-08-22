@@ -15,7 +15,7 @@
 
 - **NestJS 12** (`^12.0.0-alpha.5`, on the `next` npm tag) — this package is ESM-only, matching Nest 12's ESM-first direction
 - **Node >= 22.13** (raised from 22.12 by the optional `typeorm` peer, which declares `^20.19 || ^22.13 || >=24.11`)
-- **better-auth >= 1.6 < 2**
+- **better-auth >= 1.6.26 < 1.7.0-0** (the conformance suite runs against stock `1.6.26`)
 
 > **Nest 12 alpha peer-dependency note:** the current `12.0.0-alpha.*` packages still declare
 > `^11.0.0` peers on their own siblings, so plain `npm install` fails with `ERESOLVE`.
@@ -34,7 +34,7 @@
 ## Install
 
 ```bash
-pnpm add @nestm/better-auth@alpha better-auth
+pnpm add @nestm/better-auth@alpha better-auth@1.6.26
 ```
 
 ## Quick start
@@ -103,18 +103,19 @@ BetterAuthModule.forRootAsync({
 
 ### Module options
 
-| Option                 | Mode   | Description                                                                                                                                                                                                                                                                                                          |
-| ---------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `auth`                 | option | Pre-built `betterAuth()` instance (best type inference).                                                                                                                                                                                                                                                             |
-| `options`              | option | Raw `BetterAuthOptions`; the module calls `betterAuth()` itself and pre-seeds `hooks`/`databaseHooks`.                                                                                                                                                                                                               |
-| `basePath`             | option | Override the mount path only (for edge cases like proxy rewrites) — better-auth's router still uses its own config, so to actually move the endpoints set better-auth's `basePath`/`baseURL`. Default mirrors better-auth: path inside `baseURL` → (`BETTER_AUTH_URL` when no `baseURL`) → `basePath` → `/api/auth`. |
-| `cors`                 | option | `false` to disable, or `{ origin, credentials, methods, allowedHeaders, maxAge }`. Defaults to array `trustedOrigins`.                                                                                                                                                                                               |
-| `routePolicy`          | option | Functional HTTP policy. It runs after auth-route CORS/body recovery and before DI route policies, `middleware`, or better-auth. Return a Web `Response` to short-circuit.                                                                                                                                            |
-| `routePolicyBodyLimit` | option | Maximum bytes buffered from an untouched request stream for policy body inspection. Default `1_048_576` (1 MiB); oversized requests receive `413 PAYLOAD_TOO_LARGE`.                                                                                                                                                 |
-| `middleware`           | option | `(req, res, run) => …` wrapper around the auth handler — for MikroORM `RequestContext` / AsyncLocalStorage setups.                                                                                                                                                                                                   |
-| `interop.publicKeys`   | option | Metadata keys from other guards that mean public. Their presence skips session lookup with the same handler-level authorization override as `@AllowAnonymous()`.                                                                                                                                                     |
-| `isGlobal`             | extra  | Default `true`.                                                                                                                                                                                                                                                                                                      |
-| `disableGlobalGuard`   | extra  | Skip the automatic `APP_GUARD` registration.                                                                                                                                                                                                                                                                         |
+| Option                  | Mode   | Description                                                                                                                                                                                                                                                                                                          |
+| ----------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auth`                  | option | Pre-built `betterAuth()` instance (best type inference).                                                                                                                                                                                                                                                             |
+| `options`               | option | Raw `BetterAuthOptions`; the module calls `betterAuth()` itself and pre-seeds `hooks`/`databaseHooks`.                                                                                                                                                                                                               |
+| `basePath`              | option | Override the mount path only (for edge cases like proxy rewrites) — better-auth's router still uses its own config, so to actually move the endpoints set better-auth's `basePath`/`baseURL`. Default mirrors better-auth: path inside `baseURL` → (`BETTER_AUTH_URL` when no `baseURL`) → `basePath` → `/api/auth`. |
+| `cors`                  | option | `false` to disable, or `{ origin, credentials, methods, allowedHeaders, maxAge }`. Defaults to array `trustedOrigins`.                                                                                                                                                                                               |
+| `routePolicy`           | option | Functional HTTP policy. It runs after auth-route CORS/body recovery and before DI route policies, `middleware`, or better-auth. Return a Web `Response` to short-circuit.                                                                                                                                            |
+| `routePolicyBodyLimit`  | option | Maximum bytes buffered from an untouched request stream for policy body inspection. Default `1_048_576` (1 MiB); oversized requests receive `413 PAYLOAD_TOO_LARGE`.                                                                                                                                                 |
+| `middleware`            | option | `(req, res, run) => …` wrapper around the auth handler — for MikroORM `RequestContext` / AsyncLocalStorage setups.                                                                                                                                                                                                   |
+| `interop.publicKeys`    | option | Metadata keys from other guards that mean public. Their presence skips session lookup with the same handler-level authorization override as `@AllowAnonymous()`.                                                                                                                                                     |
+| `organizationLifecycle` | option | Optional organization-scoped serialization boundary used by `BetterAuthOrganizationService` mutations. Without it the service still validates and normalizes stock Better Auth results, but does not serialize concurrent lifecycle changes.                                                                         |
+| `isGlobal`              | extra  | Default `true`.                                                                                                                                                                                                                                                                                                      |
+| `disableGlobalGuard`    | extra  | Skip the automatic `APP_GUARD` registration.                                                                                                                                                                                                                                                                         |
 
 ## Guard & decorators
 
@@ -157,6 +158,15 @@ Notes:
   `@Session()` populated.
 - `@Roles` and `@OrgRoles` are deliberately separate domains: an organization owner does not
   pass `@Roles('admin')`.
+- `session.activeOrganizationId` is a tenant selector, not proof of current membership or a
+  database-isolation boundary; Better Auth guards, hooks, and route policies do not scope domain
+  queries. When composing with
+  [`@nestm/tenant`](https://github.com/nestm-dev/tenant#secure-quick-start), keep the adapter in the
+  application: set `disableGlobalGuard: true` and `disableAutomaticGuard: true`, then explicitly
+  run `BetterAuthGuard` → `TenantGuard` → permissions (or use one composite guard), resolve only
+  from the guard-populated session with `CallbackTenantResolver`—without a client header
+  fallback—and re-check `(organizationId, userId)` membership in `TenantAccessPolicy` on every
+  request.
 - Authorization is fail-closed: a class-level `@AllowAnonymous`/`@OptionalAuth` is ignored on
   handlers that declare their own `@Roles`/`@OrgRoles`/`@RequireActiveOrg`/permission
   requirements (a handler-level `@AllowAnonymous` still wins).
@@ -166,6 +176,40 @@ Notes:
 - WebSocket gateways need `@UseGuards(BetterAuthGuard)` explicitly (Nest's `APP_GUARD` does
   not cover gateways). The guard understands http, ws, and rpc contexts; GraphQL is wired but
   currently **experimental** (the `@nestjs/graphql` v12-compatible stack is not yet stable).
+
+### State-changing controller origins
+
+Cookie-authenticated controller routes also need a CSRF boundary. Register the exported
+`MutationOriginGuard` as an application guard with an exact origin allowlist:
+
+```ts
+import { Module } from "@nestjs/common";
+import { APP_GUARD } from "@nestjs/core";
+import { MUTATION_ORIGIN_GUARD_OPTIONS, MutationOriginGuard } from "@nestm/better-auth";
+
+@Module({
+	providers: [
+		{
+			provide: MUTATION_ORIGIN_GUARD_OPTIONS,
+			useValue: { trustedOrigins: ["https://studio.example.com"] },
+		},
+		MutationOriginGuard,
+		{ provide: APP_GUARD, useExisting: MutationOriginGuard },
+	],
+})
+export class SecurityModule {}
+```
+
+For `POST`, `PUT`, `PATCH`, `DELETE`, and other non-safe HTTP methods, the guard requires either
+an exact trusted canonical `Origin` or `Sec-Fetch-Site: same-origin`. Invalid, repeated, opaque
+(`null`), non-HTTP, or untrusted origins fail with `403`; malformed Fetch Metadata also fails
+closed. `GET`, `HEAD`, and `OPTIONS` are unaffected. An explicitly trusted cross-site origin wins
+over `Sec-Fetch-Site: cross-site`, which permits a deliberately separate browser frontend.
+
+Trusted origins must use HTTPS. Local development may opt into plain HTTP with
+`allowLoopbackHttp: true`; this accepts only `localhost`, `*.localhost`, `127.0.0.0/8`, and
+`[::1]`. The guard affects Nest HTTP controller routes, while mounted Better Auth endpoints keep
+Better Auth's own origin validation.
 
 ## Hooks with NestJS DI
 
@@ -256,6 +300,130 @@ materialized.
 `BetterAuthService` exposes `.instance`, `.api`, `.options`, `.context()` and
 `.getSession(headers)`. The raw instance is injectable via `@InjectBetterAuth()` or the
 `BETTER_AUTH_INSTANCE` token; the resolved mount path via `BETTER_AUTH_BASE_PATH`.
+
+For application-owned controller facades, use `invokeApi()` instead of converting Nest request
+headers and mapping Better Auth errors in every service:
+
+```ts
+import { Headers as RequestHeaders } from "@nestjs/common";
+import type { IncomingHttpHeaders } from "node:http";
+
+async invite(
+	@RequestHeaders() requestHeaders: IncomingHttpHeaders,
+	body: InviteMemberDto,
+) {
+	return this.auth.invokeApi(requestHeaders, (api, headers) =>
+		api.createInvitation({ body, headers }),
+	);
+}
+```
+
+The callback receives the plugin-aware `auth.api` and a Web `Headers` copy. Its exact return type
+is preserved. Better Auth `APIError`s become Nest `HttpException`s with
+`{ statusCode, code, message }`; arbitrary body fields such as `cause` are not exposed, and
+non-Better-Auth failures continue through the application's exception pipeline unchanged.
+
+`invokeApi()` does not sanitize successful endpoint payloads. For session management, inject
+`BetterAuthSessionService` instead. Its `list()` result contains only the session `id`, dates,
+nullable IP address and user agent, plus an authoritative `current` flag. Better Auth's bearer
+tokens and user ids never cross the service boundary:
+
+```ts
+@Controller("account/sessions")
+export class AccountSessionsController {
+	constructor(private readonly sessions: BetterAuthSessionService) {}
+
+	@Get()
+	list(@RequestHeaders() headers: IncomingHttpHeaders) {
+		return this.sessions.list(headers);
+	}
+
+	@Delete(":sessionId")
+	revoke(@RequestHeaders() headers: IncomingHttpHeaders, @Param("sessionId") sessionId: string) {
+		return this.sessions.revokeById(headers, sessionId);
+	}
+}
+```
+
+`revokeById(headers, sessionId)` accepts only a session owned by the authenticated caller and
+returns the same `SESSION_NOT_FOUND` response for missing and foreign ids. `revokeOthers(headers)`
+keeps the current session; `revokeAll(headers)` includes it. All four methods accept Web `Headers`
+or Nest/Node request headers and translate Better Auth API errors through `invokeApi()`.
+
+Once the application facade is mounted, opt in to the supplied route policy so clients cannot
+reach Better Auth's token-bearing session routes directly:
+
+```ts
+BetterAuthModule.forFeature({
+	routePolicies: [BetterAuthSessionManagementRoutePolicy],
+});
+```
+
+This blocks `/list-sessions`, `/revoke-session`, `/revoke-other-sessions`, and
+`/revoke-sessions` at the Better Auth HTTP mount. Server-side calls made by
+`BetterAuthSessionService` remain available.
+
+### Organization control plane
+
+`BetterAuthOrganizationService` is the application-facing lifecycle facade for the stock
+Better Auth organization plugin. It lists, updates, removes, and leaves memberships; lists,
+creates, resends by invitation id, and cancels organization invitations; and lists, previews,
+accepts, or rejects the authenticated account's invitations. Returned members always include a
+validated public user projection, and returned invitations are runtime-validated before crossing
+the service boundary. In particular, `updateMemberRole()` re-reads the joined member because stock
+Better Auth 1.6.26 returns a bare member at runtime despite its joined-user response type.
+
+Every lifecycle mutation passes through the optional `organizationLifecycle` coordinator. The
+service by itself is a compatibility and normalization layer; without a coordinator it does not
+serialize concurrent requests. For cross-process PostgreSQL serialization and database atomicity,
+use the supplied TypeORM coordinator and give its exact `getManager` function to the Better Auth
+adapter so both execute inside the same transaction and organization advisory lock:
+
+```ts
+import { betterAuth } from "better-auth";
+import { organization } from "better-auth/plugins";
+import {
+	createTypeormBetterAuthOrganizationLifecycleCoordinator,
+	typeormAdapter,
+} from "@nestm/better-auth/typeorm";
+
+const organizationLifecycle = createTypeormBetterAuthOrganizationLifecycleCoordinator(dataSource);
+
+const auth = betterAuth({
+	database: typeormAdapter(dataSource, {
+		transaction: true,
+		getManager: organizationLifecycle.getManager,
+	}),
+	plugins: [organization()],
+});
+
+BetterAuthModule.forRoot({ auth, organizationLifecycle });
+```
+
+After the application's organization and account facade controllers are mounted, opt in to the
+raw-route policy:
+
+```ts
+BetterAuthModule.forFeature({
+	routePolicies: [BetterAuthOrganizationControlPlaneRoutePolicy],
+});
+```
+
+That policy closes the corresponding raw organization/member/invitation HTTP paths, including
+the reserved `/organization/resend-invitation` path. It does not affect server-side calls.
+Calling `BetterAuthService`, the injected Better Auth instance, or `auth.api.*` directly bypasses
+the lifecycle coordinator, so code that needs the guarantee must use
+`BetterAuthOrganizationService`. Cross-process atomicity therefore requires all three pieces: the
+PostgreSQL coordinator, the adapter wired to that same coordinator's `getManager`, and the opt-in
+raw-route policy preventing clients from taking an uncoordinated HTTP path for those lifecycle
+operations.
+
+The transaction covers database mutations only. Invitation email delivery, application/Better
+Auth hook side effects, secondary storage, and client cookie caches cannot be committed or rolled
+back atomically with PostgreSQL. After remove/leave, matching database or secondary-storage
+session selectors are cleared best-effort after commit; a cleanup failure does not turn an already
+committed membership mutation into an apparent failure, and an already-issued signed cookie cache
+may remain stale until refreshed.
 
 HTTP adapters and application request augmentations can extend `BetterAuthRequestState` instead
 of recreating Better Auth's plugin-aware `session` and `user` fields. Its resolved-session marker
@@ -389,13 +557,19 @@ import { typeormAdapter } from "@nestm/better-auth/typeorm";
 BetterAuthModule.forRootAsync({
 	inject: [DataSource],
 	useFactory: (dataSource: DataSource) => ({
-		options: { database: typeormAdapter(dataSource) },
+		options: { database: typeormAdapter(dataSource, { transaction: true }) },
 	}),
 });
 ```
 
 `typeorm` is an **optional** peer and the built entry imports it only as a type — nothing is
 loaded at runtime, so installing this package without TypeORM stays free.
+
+The adapter's public boundary is a library-owned structural capability contract rather than
+TypeORM's nominal `DataSource` class. A linked workspace can therefore pass its own compatible
+`DataSource` directly even when the package manager resolves TypeORM at a second physical path.
+The adapter validates the metadata and manager capabilities it consumes at runtime; no consumer
+cast or shared-module-path workaround is required.
 
 ### Requirements
 
@@ -424,13 +598,18 @@ typeormAdapter(dataSource, { entities: { rateLimit: ThrottleBucket } });
 
 ### Options
 
-| Option        | Default              | Purpose                                                                                         |
-| ------------- | -------------------- | ----------------------------------------------------------------------------------------------- |
-| `entities`    | `{}`                 | Explicit model → entity mapping.                                                                |
-| `getManager`  | `dataSource.manager` | Supplies the `EntityManager` per statement, so auth writes can join a surrounding unit of work. |
-| `transaction` | `false`              | Enables Better Auth's `transaction()`, backed by `dataSource.transaction()`.                    |
-| `usePlural`   | `false`              | Appends `s` to model names during resolution.                                                   |
-| `debugLogs`   | `false`              | Forwarded to the adapter factory.                                                               |
+| Option        | Default              | Purpose                                                                                                             |
+| ------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `entities`    | `{}`                 | Explicit model → entity mapping.                                                                                    |
+| `getManager`  | `dataSource.manager` | Supplies a scoped `EntityManager`; a defined value also lets Better Auth join the application's active transaction. |
+| `transaction` | `false`              | Enables Better Auth's `transaction()`; joins `getManager()` or opens `dataSource.transaction()`.                    |
+| `usePlural`   | `false`              | Appends `s` to model names during resolution.                                                                       |
+| `debugLogs`   | `false`              | Forwarded to the adapter factory.                                                                                   |
+
+Enable `transaction` in production so Better Auth's multi-step user/account/session writes are
+atomic. When the application already owns a transaction through `getManager`, the adapter joins
+it instead of opening a competing transaction. That allows an application audit or outbox write
+using the same scoped manager to commit or roll back with the Better Auth mutation.
 
 `getManager` is resolved **per statement**, not once at construction — an adapter is built at
 application boot, long before any request context exists:
@@ -439,9 +618,11 @@ application boot, long before any request context exists:
 typeormAdapter(dataSource, { getManager: () => unitOfWork.getStore()?.manager });
 ```
 
-Returning `undefined` falls back to `dataSource.manager`, so it is safe to call outside a
-scoped context. Statements inside `transaction()` ignore the hook and use the transactional
-manager — a callback that escaped its own transaction would defeat the point.
+Returning `undefined` falls back to `dataSource.manager` for ordinary statements and makes
+`transaction()` open `dataSource.transaction()`. Returning a manager while `transaction` is
+enabled explicitly means that manager already belongs to the application's active unit of work;
+the Better Auth callback pins it for every inner statement. Do not return a non-transactional
+manager from the hook merely as a permanent replacement for `dataSource.manager`.
 
 ### Timezones — this adapter owns the concern
 
