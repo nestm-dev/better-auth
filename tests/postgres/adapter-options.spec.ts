@@ -129,6 +129,40 @@ describe("adapter options", () => {
 	});
 
 	describe("transaction", () => {
+		test("joins an application-owned transaction supplied by getManager", async () => {
+			const dataSource = context.dataSource!;
+			let scoped: EntityManager | undefined;
+			let managerResolutions = 0;
+			const db = typeormAdapter(dataSource, {
+				transaction: true,
+				getManager: () => {
+					managerResolutions++;
+					return scoped;
+				},
+			})(MINIMAL_OPTIONS);
+
+			await expect(
+				dataSource.transaction(async (manager) => {
+					scoped = manager;
+					await db.transaction(async (trx) => {
+						await trx.create({
+							model: "rateLimit",
+							data: { key: "joined-tx", count: 1, lastRequest: 1 },
+						});
+					});
+					// The inner adapter is pinned: the hook identifies the outer transaction once,
+					// rather than being re-resolved for every statement in Better Auth's callback.
+					expect(managerResolutions).toBe(1);
+					throw new Error("roll back application unit of work");
+				}),
+			).rejects.toThrow("roll back application unit of work");
+
+			scoped = undefined;
+			expect(
+				await db.findOne({ model: "rateLimit", where: [{ field: "key", value: "joined-tx" }] }),
+			).toBeNull();
+		});
+
 		test("commits when the callback resolves and rolls back when it throws", async () => {
 			const dataSource = context.dataSource!;
 			const db = typeormAdapter(dataSource, { transaction: true })(MINIMAL_OPTIONS);

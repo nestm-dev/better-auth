@@ -84,13 +84,16 @@ export interface TypeormAdapterConfig {
 	 * construction: an adapter is built at application boot, long before any request context
 	 * exists.
 	 *
-	 * Statements issued inside `transaction()` ignore this hook and use the transactional
-	 * manager, because a callback that escaped its own transaction would defeat the point.
+	 * When `transaction` is enabled, a defined manager also signals that the application already
+	 * owns the transaction. Better Auth's transaction callback joins and pins that manager rather
+	 * than opening an independent `dataSource.transaction()`. Return `undefined` whenever no
+	 * application transaction is active.
 	 */
 	getManager?: (() => TypeormEntityManager | undefined) | undefined;
 
 	/**
-	 * Enable Better Auth's `transaction()` support, backed by `dataSource.transaction()`.
+	 * Enable Better Auth's `transaction()` support. It joins a manager returned by `getManager`,
+	 * or opens a `dataSource.transaction()` when the hook is absent or returns `undefined`.
 	 *
 	 * @default false
 	 */

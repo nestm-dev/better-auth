@@ -64,7 +64,24 @@ export {
 
 // Service & guard
 export { BetterAuthService } from "./services/better-auth.service.ts";
+export type { BetterAuthApiInvocation } from "./services/better-auth.service.ts";
+export {
+	BetterAuthSessionService,
+	type BetterAuthSessionBulkRevocationResult,
+	type BetterAuthSessionRevocationResult,
+	type BetterAuthSessionSummary,
+} from "./services/better-auth-session.service.ts";
+export {
+	mapBetterAuthApiError,
+	normalizeBetterAuthHeaders,
+	type BetterAuthApiErrorResponse,
+	type BetterAuthApiHeaders,
+} from "./services/better-auth-api-invocation.ts";
 export { BetterAuthGuard } from "./guards/better-auth.guard.ts";
+export {
+	BETTER_AUTH_SESSION_MANAGEMENT_PATHS,
+	BetterAuthSessionManagementRoutePolicy,
+} from "./policies/session-management-route-policy.ts";
 export { createAuthError, type AuthErrorStatus } from "./guards/auth-errors.ts";
 export {
 	MUTATION_ORIGIN_GUARD_OPTIONS,

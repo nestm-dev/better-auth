@@ -1,6 +1,9 @@
 import {
 	BetterAuthGuard,
 	BetterAuthModule,
+	BetterAuthService,
+	BetterAuthSessionManagementRoutePolicy,
+	BetterAuthSessionService,
 	AuthRoutePolicy,
 	deny,
 	type AnyAuth,
@@ -8,15 +11,46 @@ import {
 	type BetterAuthRoutePolicy,
 	type BetterAuthRoutePolicyContext,
 	type BetterAuthRoutePolicyHandler,
+	type BetterAuthSessionBulkRevocationResult,
+	type BetterAuthSessionRevocationResult,
+	type BetterAuthSessionSummary,
 } from "@nestm/better-auth";
 import { typeormAdapter, type TypeormAdapterConfig } from "@nestm/better-auth/typeorm";
 import type { Reflector } from "@nestjs/core";
+import { betterAuth } from "better-auth";
+import { organization } from "better-auth/plugins";
+import type { IncomingHttpHeaders } from "node:http";
 import type { DataSource, EntityManager } from "typeorm";
 
 declare const reflector: Reflector;
 declare const auth: AnyAuth;
 declare const dataSource: DataSource;
 declare const scopedManager: EntityManager | undefined;
+declare const requestHeaders: IncomingHttpHeaders;
+
+const pluginAuth = betterAuth({ plugins: [organization()] });
+declare const pluginService: BetterAuthService<typeof pluginAuth>;
+declare const sessionService: BetterAuthSessionService<typeof pluginAuth>;
+const invitationCall = pluginService.invokeApi(requestHeaders, (api, headers) =>
+	api.createInvitation({
+		body: {
+			email: "packed@example.com",
+			role: "member",
+			organizationId: "packed-organization",
+		},
+		headers,
+	}),
+);
+const sessionList: Promise<readonly BetterAuthSessionSummary[]> =
+	sessionService.list(requestHeaders);
+const sessionRevocation: Promise<BetterAuthSessionRevocationResult> = sessionService.revokeById(
+	requestHeaders,
+	"session-id",
+);
+const otherSessionRevocation: Promise<BetterAuthSessionBulkRevocationResult> =
+	sessionService.revokeOthers(requestHeaders);
+const allSessionRevocation: Promise<BetterAuthSessionBulkRevocationResult> =
+	sessionService.revokeAll(requestHeaders);
 
 const functionalRoutePolicy = (({ authPath }) =>
 	authPath === "/functional-policy-test"
@@ -53,6 +87,9 @@ class PackedRoutePolicy implements BetterAuthRoutePolicyHandler {
 }
 AuthRoutePolicy({ path: "/sign-up/*", methods: ["POST"], order: -10 })(PackedRoutePolicy);
 const policyFeature = BetterAuthModule.forFeature({ routePolicies: [PackedRoutePolicy] });
+const sessionPolicyFeature = BetterAuthModule.forFeature({
+	routePolicies: [BetterAuthSessionManagementRoutePolicy],
+});
 
 // The `./typeorm` subpath ships its own entry, so it needs its own coverage here: without a
 // consumer import it would be published untested against its rolled-up declarations.
@@ -73,8 +110,14 @@ export {
 	databaseAdapter,
 	defaultedAdapter,
 	interop,
+	invitationCall,
+	sessionList,
+	sessionRevocation,
+	otherSessionRevocation,
+	allSessionRevocation,
 	manuallyConstructedGuard,
 	moduleWithTypeormDatabase,
 	policyFeature,
+	sessionPolicyFeature,
 	synchronousModule,
 };

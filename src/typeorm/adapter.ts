@@ -445,21 +445,27 @@ export function typeormAdapter(
 		},
 
 		transaction: config.transaction
-			? (callback) =>
-					Reflect.apply(dataSource.transaction, dataSource, [
-						(manager: unknown) => {
-							const transactionalManager = requireEntityManager(manager);
-							return callback(
-								createAdapterFactory({
-									// The inner adapter is pinned to the transactional manager, and
-									// `getManager` is deliberately not consulted: a statement that resolved
-									// its own manager here would run outside the transaction it was handed.
-									adapter: createCustomAdapter(() => transactionalManager),
-									config: { ...adapterConfig, transaction: false },
-								})(lazyOptions ?? {}),
-							);
-						},
-					])
+			? (callback) => {
+					const runWithManager = (manager: unknown) => {
+						const transactionalManager = requireEntityManager(manager);
+						return callback(
+							createAdapterFactory({
+								// Pin every inner statement to one manager. Resolving the hook again from
+								// inside the callback could let a context change split one logical unit of work.
+								adapter: createCustomAdapter(() => transactionalManager),
+								config: { ...adapterConfig, transaction: false },
+							})(lazyOptions ?? {}),
+						);
+					};
+
+					// A defined scoped manager means the application already owns the transaction
+					// (typically through AsyncLocalStorage). Join it so Better Auth writes can be
+					// committed or rolled back atomically with application audit/outbox records.
+					const scopedManager = config.getManager?.();
+					if (scopedManager !== undefined) return runWithManager(scopedManager);
+
+					return Reflect.apply(dataSource.transaction, dataSource, [runWithManager]);
+				}
 			: false,
 	};
 

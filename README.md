@@ -300,6 +300,68 @@ materialized.
 `.getSession(headers)`. The raw instance is injectable via `@InjectBetterAuth()` or the
 `BETTER_AUTH_INSTANCE` token; the resolved mount path via `BETTER_AUTH_BASE_PATH`.
 
+For application-owned controller facades, use `invokeApi()` instead of converting Nest request
+headers and mapping Better Auth errors in every service:
+
+```ts
+import { Headers as RequestHeaders } from "@nestjs/common";
+import type { IncomingHttpHeaders } from "node:http";
+
+async invite(
+	@RequestHeaders() requestHeaders: IncomingHttpHeaders,
+	body: InviteMemberDto,
+) {
+	return this.auth.invokeApi(requestHeaders, (api, headers) =>
+		api.createInvitation({ body, headers }),
+	);
+}
+```
+
+The callback receives the plugin-aware `auth.api` and a Web `Headers` copy. Its exact return type
+is preserved. Better Auth `APIError`s become Nest `HttpException`s with
+`{ statusCode, code, message }`; arbitrary body fields such as `cause` are not exposed, and
+non-Better-Auth failures continue through the application's exception pipeline unchanged.
+
+`invokeApi()` does not sanitize successful endpoint payloads. For session management, inject
+`BetterAuthSessionService` instead. Its `list()` result contains only the session `id`, dates,
+nullable IP address and user agent, plus an authoritative `current` flag. Better Auth's bearer
+tokens and user ids never cross the service boundary:
+
+```ts
+@Controller("account/sessions")
+export class AccountSessionsController {
+	constructor(private readonly sessions: BetterAuthSessionService) {}
+
+	@Get()
+	list(@RequestHeaders() headers: IncomingHttpHeaders) {
+		return this.sessions.list(headers);
+	}
+
+	@Delete(":sessionId")
+	revoke(@RequestHeaders() headers: IncomingHttpHeaders, @Param("sessionId") sessionId: string) {
+		return this.sessions.revokeById(headers, sessionId);
+	}
+}
+```
+
+`revokeById(headers, sessionId)` accepts only a session owned by the authenticated caller and
+returns the same `SESSION_NOT_FOUND` response for missing and foreign ids. `revokeOthers(headers)`
+keeps the current session; `revokeAll(headers)` includes it. All four methods accept Web `Headers`
+or Nest/Node request headers and translate Better Auth API errors through `invokeApi()`.
+
+Once the application facade is mounted, opt in to the supplied route policy so clients cannot
+reach Better Auth's token-bearing session routes directly:
+
+```ts
+BetterAuthModule.forFeature({
+	routePolicies: [BetterAuthSessionManagementRoutePolicy],
+});
+```
+
+This blocks `/list-sessions`, `/revoke-session`, `/revoke-other-sessions`, and
+`/revoke-sessions` at the Better Auth HTTP mount. Server-side calls made by
+`BetterAuthSessionService` remain available.
+
 HTTP adapters and application request augmentations can extend `BetterAuthRequestState` instead
 of recreating Better Auth's plugin-aware `session` and `user` fields. Its resolved-session marker
 uses the global symbol registry so guards and decorators remain compatible across duplicate package
@@ -473,17 +535,18 @@ typeormAdapter(dataSource, { entities: { rateLimit: ThrottleBucket } });
 
 ### Options
 
-| Option        | Default              | Purpose                                                                                         |
-| ------------- | -------------------- | ----------------------------------------------------------------------------------------------- |
-| `entities`    | `{}`                 | Explicit model → entity mapping.                                                                |
-| `getManager`  | `dataSource.manager` | Supplies the `EntityManager` per statement, so auth writes can join a surrounding unit of work. |
-| `transaction` | `false`              | Enables Better Auth's `transaction()`, backed by `dataSource.transaction()`.                    |
-| `usePlural`   | `false`              | Appends `s` to model names during resolution.                                                   |
-| `debugLogs`   | `false`              | Forwarded to the adapter factory.                                                               |
+| Option        | Default              | Purpose                                                                                                             |
+| ------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `entities`    | `{}`                 | Explicit model → entity mapping.                                                                                    |
+| `getManager`  | `dataSource.manager` | Supplies a scoped `EntityManager`; a defined value also lets Better Auth join the application's active transaction. |
+| `transaction` | `false`              | Enables Better Auth's `transaction()`; joins `getManager()` or opens `dataSource.transaction()`.                    |
+| `usePlural`   | `false`              | Appends `s` to model names during resolution.                                                                       |
+| `debugLogs`   | `false`              | Forwarded to the adapter factory.                                                                                   |
 
 Enable `transaction` in production so Better Auth's multi-step user/account/session writes are
-atomic. It remains opt-in for compatibility with applications that already own the transaction
-through `getManager`.
+atomic. When the application already owns a transaction through `getManager`, the adapter joins
+it instead of opening a competing transaction. That allows an application audit or outbox write
+using the same scoped manager to commit or roll back with the Better Auth mutation.
 
 `getManager` is resolved **per statement**, not once at construction — an adapter is built at
 application boot, long before any request context exists:
@@ -492,9 +555,11 @@ application boot, long before any request context exists:
 typeormAdapter(dataSource, { getManager: () => unitOfWork.getStore()?.manager });
 ```
 
-Returning `undefined` falls back to `dataSource.manager`, so it is safe to call outside a
-scoped context. Statements inside `transaction()` ignore the hook and use the transactional
-manager — a callback that escaped its own transaction would defeat the point.
+Returning `undefined` falls back to `dataSource.manager` for ordinary statements and makes
+`transaction()` open `dataSource.transaction()`. Returning a manager while `transaction` is
+enabled explicitly means that manager already belongs to the application's active unit of work;
+the Better Auth callback pins it for every inner statement. Do not return a non-transactional
+manager from the hook merely as a permanent replacement for `dataSource.manager`.
 
 ### Timezones — this adapter owns the concern
 
