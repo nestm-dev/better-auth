@@ -9,6 +9,7 @@
 - `@Session()` / `@CurrentUser()` parameter decorators, `@InjectBetterAuth()`
 - Class-based hooks with full NestJS DI: `@Hook` + `@BeforeHook`/`@AfterHook`, `@DatabaseHook` + `@BeforeCreate`/`@AfterUpdate`/…, discovered anywhere in your module graph — **no `hooks: {}` pre-declaration needed**
 - Composable HTTP route policies with full NestJS DI: `@AuthRoutePolicy({ path, methods, order })`
+- Safe application facades for account sessions, organization lifecycle, and platform user management
 - Works with every better-auth plugin; plugin types flow into `@Session()` and `BetterAuthService`
 
 ## Requirements
@@ -113,7 +114,8 @@ BetterAuthModule.forRootAsync({
 | `routePolicyBodyLimit`  | option | Maximum bytes buffered from an untouched request stream for policy body inspection. Default `1_048_576` (1 MiB); oversized requests receive `413 PAYLOAD_TOO_LARGE`.                                                                                                                                                 |
 | `middleware`            | option | `(req, res, run) => …` wrapper around the auth handler — for MikroORM `RequestContext` / AsyncLocalStorage setups.                                                                                                                                                                                                   |
 | `interop.publicKeys`    | option | Metadata keys from other guards that mean public. Their presence skips session lookup with the same handler-level authorization override as `@AllowAnonymous()`.                                                                                                                                                     |
-| `organizationLifecycle` | option | Optional organization-scoped serialization boundary used by `BetterAuthOrganizationService` mutations. Without it the service still validates and normalizes stock Better Auth results, but does not serialize concurrent lifecycle changes.                                                                         |
+| `controlPlaneLifecycle` | option | Optional namespaced (`organization`, `user`, `platform`) serialization boundary shared by the organization and user-management facades.                                                                                                                                                                              |
+| `organizationLifecycle` | option | Deprecated organization-only serialization boundary retained for compatibility. `BetterAuthOrganizationService` prefers `controlPlaneLifecycle` when both are present.                                                                                                                                               |
 | `isGlobal`              | extra  | Default `true`.                                                                                                                                                                                                                                                                                                      |
 | `disableGlobalGuard`    | extra  | Skip the automatic `APP_GUARD` registration.                                                                                                                                                                                                                                                                         |
 
@@ -325,8 +327,11 @@ non-Better-Auth failures continue through the application's exception pipeline u
 
 `invokeApi()` does not sanitize successful endpoint payloads. For session management, inject
 `BetterAuthSessionService` instead. Its `list()` result contains only the session `id`, dates,
-nullable IP address and user agent, plus an authoritative `current` flag. Better Auth's bearer
-tokens and user ids never cross the service boundary:
+nullable IP address and user agent, an authoritative `current` flag, and `redactedFields`. Better
+Auth's bearer tokens and user ids never cross the service boundary. Untrusted IP address and user
+agent display values are truncated to 255 and 1,024 code units; `redactedFields` lists
+`"ipAddress"` then `"userAgent"` when projection occurs, so callers do not treat them as
+authoritative:
 
 ```ts
 @Controller("account/sessions")
@@ -363,6 +368,112 @@ This blocks `/list-sessions`, `/revoke-session`, `/revoke-other-sessions`, and
 `/revoke-sessions` at the Better Auth HTTP mount. Server-side calls made by
 `BetterAuthSessionService` remain available.
 
+### Platform user management
+
+`BetterAuthUserManagementService` is an application-facing facade over the stock Better Auth
+admin plugin. It provides bounded user listing/search/filtering/pagination, reads one user,
+updates only `name` and a syntactically valid `email`, assigns bounded role values, bans/unbans,
+lists token-free active sessions, revokes a target-owned session by its public id, and revokes all
+sessions after first verifying that the user exists. Successful Better Auth responses are
+runtime-validated and length-bounded before they cross the service boundary. `emailVerified` is
+never caller-controlled; changing to a distinct email resets it to `false` internally. A
+same/case-only email update is omitted, so it cannot clear an existing verification while a name
+change in the same request still applies.
+The configured auth instance must include Better Auth's `admin()` plugin.
+
+Stock Better Auth accepts profile values wider than this safe facade, including empty/non-string
+names, unbounded names/images, and email addresses outside the facade's bounded syntax. These
+self-controlled display fields cannot make an account unmanageable. Every managed user includes a
+deterministically ordered `redactedFields` array (`name`, `email`, `image`, `banReason`): empty or
+non-string names become `name: null`, oversized names and ban reasons are truncated to 256 and
+1,024 code units, unsafe emails become `email: null` and are never fabricated or truncated, and
+unsafe images become `image: null`. An empty array means no projection occurred. User/session ids,
+roles, and dates remain strict authoritative fields; malformed values there fail closed.
+
+```ts
+@Controller("platform/users")
+export class PlatformUsersController {
+	constructor(private readonly users: BetterAuthUserManagementService) {}
+
+	@Get()
+	list(@RequestHeaders() headers: IncomingHttpHeaders) {
+		return this.users.list(headers, { limit: 50, offset: 0 });
+	}
+
+	@Delete(":userId/sessions/:sessionId")
+	revokeSession(
+		@RequestHeaders() headers: IncomingHttpHeaders,
+		@Param("userId") userId: string,
+		@Param("sessionId") sessionId: string,
+	) {
+		return this.users.revokeSessionById(headers, userId, sessionId);
+	}
+}
+```
+
+The list API permits one stock Better Auth exact filter at a time:
+`{ field: "role", value: "platform_admin" }` or `{ field: "banned", value: true }`. Role values
+are structurally bounded but deliberately not application-allowlisted; a controller that accepts
+roles from clients must constrain them to its configured admin-plugin roles. Stock Better Auth
+1.6.26 catches adapter failures inside `listUsers` and returns `{ users: [], total: 0 }`, so this
+facade cannot distinguish that failure from a genuinely empty result. Applications that need an
+availability signal must obtain it from database/adapter health monitoring, not from this page.
+
+Omitting `expiresInSeconds` from `ban()` delegates expiry to the admin plugin's
+`defaultBanExpiresIn`. With stock Better Auth configuration (that option also omitted), the ban
+has no expiry; a configured plugin default remains authoritative. `BetterAuthGuard` rejects
+retained sessions for active bans with `403 BANNED_USER`, even though the stock admin plugin checks
+bans only when creating a new session. A ban whose valid expiry is strictly in the past is no
+longer enforced; malformed expiry data fails closed. The same denial applies when
+`@AllowAnonymous({ resolveSession: true })` or `@OptionalAuth()` resolves an active banned session,
+so a public handler never receives that identity as authenticated; a request with no session still
+uses the decorators' normal anonymous behavior.
+
+Better Auth 1.6.26 can retain an old temporary `banExpires` when an expiry-omitted re-ban should
+apply the plugin default. When the facade sees an existing expiry, it first uses the public
+`adminUpdateUser` API to set `{ banned: true, banExpires: null }`, then calls `banUser` to apply the
+requested/plugin-default reason and expiry, all inside one `run("user", ...)` lifecycle. If the
+final call fails without a transaction, the account remains permanently banned rather than
+failing open. The sequence is fully database-atomic only when the lifecycle coordinator and Better
+Auth adapter share its transaction manager as shown below; without that wiring a stricter first
+mutation can persist on failure, but there is no intermediate unbanned state. This stale-expiry
+correction requires the stock role to grant both `user:ban` and `user:update`: a ban-only role can
+perform an ordinary ban, but cannot convert an existing temporary ban to an expiry-omitted ban
+through this facade. Roles used for this management surface should grant both permissions.
+
+Stock `listUserSessions` has no pagination and materializes the adapter's complete result before
+the facade receives it. The facade rejects results over 1,000 entries rather than returning an
+unbounded payload or silently making a later session id unreachable; `revokeSessionById` therefore
+also fails closed above that threshold. `revokeAllSessions` does not enumerate sessions and remains
+available. Database-level session retention is still required because this guard cannot prevent
+the stock endpoint's initial allocation.
+
+Managed-user session summaries similarly project IP address and User-Agent to 255 and 1,024 code
+units and expose deterministic `redactedFields` (`ipAddress`, then `userAgent`). The private token,
+session/user ids, and dates remain strict, so oversized display metadata cannot block a safe-id
+single-session revocation.
+
+Once facade controllers are mounted, close the entire raw admin HTTP namespace:
+
+```ts
+BetterAuthModule.forFeature({
+	routePolicies: [BetterAuthUserManagementRoutePolicy],
+});
+```
+
+The segment-safe `/admin/*` policy returns `403 USER_MANAGEMENT_FACADE_REQUIRED`. It prevents
+clients from reaching token-bearing session responses and raw create/delete/password/
+impersonation endpoints; those higher-risk operations are intentionally absent from the facade.
+The policy is opt-in and HTTP-only. Direct `auth.api.*`, `BetterAuthService`, or injected raw auth
+calls bypass both it and the lifecycle coordinator.
+
+User mutations use `controlPlaneLifecycle.run("user", userId, operation)` when configured. That
+serializes changes to one user, but it cannot by itself protect a global invariant such as “at
+least one platform administrator remains”: an application enforcing that rule must re-read and
+mutate under one shared `run("platform", "administrators", ...)` operation. Database transactions
+also cannot atomically roll back secondary storage, hook side effects, or already-issued client
+cookies.
+
 ### Organization control plane
 
 `BetterAuthOrganizationService` is the application-facing lifecycle facade for the stock
@@ -373,32 +484,50 @@ validated public user projection, and returned invitations are runtime-validated
 the service boundary. In particular, `updateMemberRole()` re-reads the joined member because stock
 Better Auth 1.6.26 returns a bare member at runtime despite its joined-user response type.
 
-Every lifecycle mutation passes through the optional `organizationLifecycle` coordinator. The
-service by itself is a compatibility and normalization layer; without a coordinator it does not
-serialize concurrent requests. For cross-process PostgreSQL serialization and database atomicity,
-use the supplied TypeORM coordinator and give its exact `getManager` function to the Better Auth
-adapter so both execute inside the same transaction and organization advisory lock:
+Stock profile fields cannot make a membership unmanageable. Each returned member's nested `user`
+has `name: string | null`, `email: string | null`, `image: string | null`, and a deterministic
+`redactedFields` array (`name`, `email`, then `image`). Empty/non-string names become `null`, names
+over 256 code units are safely truncated, emails outside the facade's 320-code-unit syntax become
+`null` and are never fabricated or truncated, and non-string/images over 4,096 code units become
+`null`. The authoritative user/member/organization ids, role, and membership date remain strict,
+so projected display data cannot block listing, role changes, removals, or leaving an organization.
+
+Every lifecycle mutation prefers the optional shared `controlPlaneLifecycle` coordinator and
+falls back to the legacy `organizationLifecycle` option. The service by itself is a compatibility
+and normalization layer; without a coordinator it does not serialize concurrent requests. For
+cross-process PostgreSQL serialization and database atomicity, use the supplied TypeORM
+control-plane coordinator and give its exact `getManager` function to the Better Auth adapter so
+both execute inside the same transaction and namespaced advisory lock:
 
 ```ts
 import { betterAuth } from "better-auth";
 import { organization } from "better-auth/plugins";
 import {
-	createTypeormBetterAuthOrganizationLifecycleCoordinator,
+	createTypeormBetterAuthControlPlaneLifecycleCoordinator,
 	typeormAdapter,
 } from "@nestm/better-auth/typeorm";
 
-const organizationLifecycle = createTypeormBetterAuthOrganizationLifecycleCoordinator(dataSource);
+const controlPlaneLifecycle = createTypeormBetterAuthControlPlaneLifecycleCoordinator(dataSource);
 
 const auth = betterAuth({
 	database: typeormAdapter(dataSource, {
 		transaction: true,
-		getManager: organizationLifecycle.getManager,
+		getManager: controlPlaneLifecycle.getManager,
 	}),
 	plugins: [organization()],
 });
 
-BetterAuthModule.forRoot({ auth, organizationLifecycle });
+BetterAuthModule.forRoot({ auth, controlPlaneLifecycle });
 ```
+
+`createTypeormBetterAuthOrganizationLifecycleCoordinator()` and the `organizationLifecycle`
+module option remain available for existing organization-only applications.
+
+During the scoped-key rolling-upgrade compatibility window, organization operations acquire both
+the legacy raw organization id and `organization:<id>` advisory-lock keys in deterministic sorted
+order. This keeps new processes serialized with older processes that know only the raw key. It
+temporarily adds one advisory lock per organization operation and may preserve legacy
+over-serialization until the compatibility acquisition is removed in a later release.
 
 After the application's organization and account facade controllers are mounted, opt in to the
 raw-route policy:
@@ -412,11 +541,10 @@ BetterAuthModule.forFeature({
 That policy closes the corresponding raw organization/member/invitation HTTP paths, including
 the reserved `/organization/resend-invitation` path. It does not affect server-side calls.
 Calling `BetterAuthService`, the injected Better Auth instance, or `auth.api.*` directly bypasses
-the lifecycle coordinator, so code that needs the guarantee must use
-`BetterAuthOrganizationService`. Cross-process atomicity therefore requires all three pieces: the
-PostgreSQL coordinator, the adapter wired to that same coordinator's `getManager`, and the opt-in
-raw-route policy preventing clients from taking an uncoordinated HTTP path for those lifecycle
-operations.
+the lifecycle coordinator, so code that needs the guarantee must use the corresponding facade.
+Cross-process atomicity therefore requires all three pieces: the PostgreSQL coordinator, the
+adapter wired to that same coordinator's `getManager`, and the opt-in raw-route policy preventing
+clients from taking an uncoordinated HTTP path for those lifecycle operations.
 
 The transaction covers database mutations only. Invitation email delivery, application/Better
 Auth hook side effects, secondary storage, and client cookie caches cannot be committed or rolled
@@ -453,6 +581,13 @@ supported.
 
 Each policy receives a normalized context containing `method`, `url`, `pathname`, `authPath`,
 Web `headers`, parsed `body`, and byte-exact `rawBody` when it is recoverable.
+
+The raw request target is parsed once with WHATWG URL semantics before base-path selection and
+policy matching, and that canonical pathname is reused for both decisions. Encoded dot segments
+such as `%2e%2e`, `.%2e`, and `%2e.` therefore cannot traverse into a protected auth route after a
+policy has seen a different path. Malformed request targets are rejected with
+`400 INVALID_REQUEST_TARGET`; the original target remains available as `context.url` and is passed
+unchanged to Better Auth after policy evaluation.
 
 ```ts
 @AuthRoutePolicy({ path: "/sign-up/*", order: -10 })

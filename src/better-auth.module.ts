@@ -22,6 +22,7 @@ import { betterAuthInstanceProvider } from "./providers/auth-instance.provider.t
 import { BetterAuthService } from "./services/better-auth.service.ts";
 import { BetterAuthSessionService } from "./services/better-auth-session.service.ts";
 import { BetterAuthOrganizationService } from "./services/better-auth-organization.service.ts";
+import { BetterAuthUserManagementService } from "./services/better-auth-user-management.service.ts";
 import { BetterAuthGuard } from "./guards/better-auth.guard.ts";
 import { BetterAuthHookRegistry } from "./hooks/hook-registry.service.ts";
 import { BetterAuthDatabaseHookRegistry } from "./hooks/database-hook-registry.service.ts";
@@ -76,6 +77,7 @@ function assertRoutePolicyClass(candidate: Type<unknown>): void {
 		BetterAuthService,
 		BetterAuthSessionService,
 		BetterAuthOrganizationService,
+		BetterAuthUserManagementService,
 		BetterAuthGuard,
 		BetterAuthHookRegistry,
 		BetterAuthDatabaseHookRegistry,
@@ -91,6 +93,7 @@ function assertRoutePolicyClass(candidate: Type<unknown>): void {
 		BetterAuthService,
 		BetterAuthSessionService,
 		BetterAuthOrganizationService,
+		BetterAuthUserManagementService,
 		BetterAuthGuard,
 		BetterAuthHookRegistry,
 		BetterAuthDatabaseHookRegistry,

@@ -32,6 +32,21 @@ interface GuardSession {
 
 type ReflectTarget = Parameters<Reflector["get"]>[1];
 
+function hasActiveBan(user: GuardSession["user"], now = Date.now()): boolean {
+	if (user?.banned !== true) return false;
+	const value = user.banExpires;
+	if (value === undefined || value === null) return true;
+	const expiration =
+		value instanceof Date
+			? value.getTime()
+			: typeof value === "string" || typeof value === "number"
+				? new Date(value).getTime()
+				: Number.NaN;
+	// Match Better Auth's strict `< Date.now()` expiry rule and fail closed for
+	// malformed adapter values instead of accidentally re-enabling the account.
+	return !Number.isFinite(expiration) || expiration >= now;
+}
+
 function matchesRequiredRole(
 	role: string | readonly string[] | null | undefined,
 	required: readonly string[],
@@ -129,6 +144,9 @@ export class BetterAuthGuard implements CanActivate {
 			}
 		}
 
+		if (session && hasActiveBan(session.user)) {
+			throw await createAuthError(kind, "FORBIDDEN", "User is banned.", "BANNED_USER");
+		}
 		if (anonymous) return true;
 
 		if (!session) {

@@ -18,6 +18,7 @@ import {
 } from "./body-recovery.ts";
 import { resolveCorsHandler } from "./cors.ts";
 import {
+	canonicalizeRequestTarget,
 	getNodeRequest,
 	getNodeResponse,
 	matchesBasePath,
@@ -75,12 +76,28 @@ export class BetterAuthMountService {
 
 		httpAdapter.use(
 			(req: AdapterRequest, res: AdapterResponse, next: (error?: unknown) => void) => {
-				if (!matchesBasePath(req, basePath)) {
+				const nodeReq = getNodeRequest(req);
+				const nodeRes = getNodeResponse(res);
+				const requestTarget = canonicalizeRequestTarget(req);
+				if (!requestTarget) {
+					void writeRoutePolicyResponse(
+						Response.json(
+							{
+								statusCode: 400,
+								code: "INVALID_REQUEST_TARGET",
+								message: "Request target is invalid.",
+							},
+							{ status: 400 },
+						),
+						nodeRes,
+						(nodeReq.method ?? "GET").toUpperCase(),
+					).catch(next);
+					return;
+				}
+				if (!matchesBasePath(requestTarget.pathname, basePath)) {
 					next();
 					return;
 				}
-				const nodeReq = getNodeRequest(req);
-				const nodeRes = getNodeResponse(res);
 				if (cors?.(nodeReq, nodeRes)) return;
 				const execute = async (): Promise<void> => {
 					if (routePolicy || this.routePolicies.size > 0) {
@@ -99,7 +116,12 @@ export class BetterAuthMountService {
 							);
 							return;
 						}
-						const context = createRoutePolicyContext(req, nodeReq, basePath, recoveredBody);
+						const context = createRoutePolicyContext(
+							nodeReq,
+							basePath,
+							recoveredBody,
+							requestTarget,
+						);
 						const policyResponse = await this.routePolicies.run(context, routePolicy);
 						if (policyResponse instanceof Response) {
 							await writeRoutePolicyResponse(policyResponse, nodeRes, context.method);

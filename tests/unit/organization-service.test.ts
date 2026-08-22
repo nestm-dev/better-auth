@@ -5,6 +5,8 @@ import {
 	BetterAuthOrganizationService,
 	BetterAuthService,
 	type AnyAuth,
+	type BetterAuthControlPlaneLifecycleCoordinator,
+	type BetterAuthControlPlaneLifecycleScope,
 	type BetterAuthModuleOptions,
 	type BetterAuthOrganizationLifecycleCoordinator,
 } from "../../src/index.ts";
@@ -115,7 +117,27 @@ class RecordingCoordinator implements BetterAuthOrganizationLifecycleCoordinator
 	}
 }
 
-function createService(api = createApi(), contextOverrides: Record<string, unknown> = {}) {
+class RecordingControlPlaneCoordinator implements BetterAuthControlPlaneLifecycleCoordinator {
+	readonly calls: Array<{
+		readonly scope: BetterAuthControlPlaneLifecycleScope;
+		readonly resourceId: string;
+	}> = [];
+
+	async run<T>(
+		scope: BetterAuthControlPlaneLifecycleScope,
+		resourceId: string,
+		operation: () => Promise<T>,
+	): Promise<T> {
+		this.calls.push({ scope, resourceId });
+		return operation();
+	}
+}
+
+function createService(
+	api = createApi(),
+	contextOverrides: Record<string, unknown> = {},
+	controlPlaneLifecycle?: BetterAuthControlPlaneLifecycleCoordinator,
+) {
 	const internalAdapter = {
 		listSessions: vi.fn(async (_userId: string) => []),
 		updateSession: vi.fn(async (_token: string, _update: Record<string, unknown>) => ({
@@ -132,7 +154,11 @@ function createService(api = createApi(), contextOverrides: Record<string, unkno
 		$ERROR_CODES: {},
 	} satisfies AnyAuth;
 	const coordinator = new RecordingCoordinator();
-	const options = { auth, organizationLifecycle: coordinator } satisfies BetterAuthModuleOptions;
+	const options = {
+		auth,
+		organizationLifecycle: coordinator,
+		...(controlPlaneLifecycle === undefined ? {} : { controlPlaneLifecycle }),
+	} satisfies BetterAuthModuleOptions;
 	return {
 		api,
 		coordinator,
@@ -146,6 +172,18 @@ describe("BetterAuthOrganizationService", () => {
 		vi.restoreAllMocks();
 	});
 
+	it("prefers the namespaced control-plane coordinator over the legacy organization one", async () => {
+		const genericCoordinator = new RecordingControlPlaneCoordinator();
+		const { coordinator, service } = createService(createApi(), {}, genericCoordinator);
+
+		await service.updateMemberRole({}, ORGANIZATION_ID, "member-id", "admin");
+
+		expect(genericCoordinator.calls).toEqual([
+			{ scope: "organization", resourceId: ORGANIZATION_ID },
+		]);
+		expect(coordinator.organizationIds).toEqual([]);
+	});
+
 	it("re-reads the joined member after a stock updateMemberRole response", async () => {
 		const updatedMember = member({ role: "admin" });
 		const api = createApi({
@@ -155,7 +193,10 @@ describe("BetterAuthOrganizationService", () => {
 
 		const result = await service.updateMemberRole({}, ORGANIZATION_ID, "member-id", ["admin"]);
 
-		expect(result).toEqual(updatedMember);
+		expect(result).toEqual({
+			...updatedMember,
+			user: { ...updatedMember.user, redactedFields: [] },
+		});
 		expect(result.user.email).toBe("member@example.com");
 		expect(api.updateMemberRole).toHaveBeenCalledWith({
 			headers: expect.any(Headers),
@@ -176,6 +217,43 @@ describe("BetterAuthOrganizationService", () => {
 			},
 		});
 		expect(coordinator.organizationIds).toEqual([ORGANIZATION_ID]);
+	});
+
+	it("keeps role updates and removals operable through bounded member identity projections", async () => {
+		const oversizedName = "n".repeat(300);
+		const api = createApi({
+			listMembers: vi.fn(async (_input: unknown) => ({
+				members: [
+					member({
+						user: {
+							id: "member-user-id",
+							name: oversizedName,
+							email: `${"e".repeat(400)}@example.com`,
+							image: "i".repeat(4_097),
+						},
+					}),
+				],
+				total: 1,
+			})),
+		});
+		const { coordinator, service } = createService(api);
+
+		const listed = await service.listMembers({}, ORGANIZATION_ID);
+		const updated = await service.updateMemberRole({}, ORGANIZATION_ID, "member-id", "admin");
+		const removed = await service.removeMember({}, ORGANIZATION_ID, "member-id");
+
+		for (const projected of [listed.members[0], updated, removed]) {
+			expect(projected?.user).toEqual({
+				id: "member-user-id",
+				name: "n".repeat(256),
+				email: null,
+				image: null,
+				redactedFields: ["name", "email", "image"],
+			});
+		}
+		expect(api.updateMemberRole).toHaveBeenCalledOnce();
+		expect(api.removeMember).toHaveBeenCalledOnce();
+		expect(coordinator.organizationIds).toEqual([ORGANIZATION_ID, ORGANIZATION_ID]);
 	});
 
 	it("cancels expired pending invitations for the normalized email before inviting", async () => {
@@ -440,10 +518,12 @@ describe("BetterAuthOrganizationService", () => {
 		expect(preview.expiresAt).toBeInstanceOf(Date);
 	});
 
-	it("rejects malformed public member data instead of leaking a partial result", async () => {
+	it("still rejects malformed authoritative member identity data", async () => {
 		const api = createApi({
 			listMembers: vi.fn(async (_input: unknown) => ({
-				members: [member({ user: { id: "member-user-id" } })],
+				members: [
+					member({ user: { name: "Member User", email: "member@example.com", image: null } }),
+				],
 				total: 1,
 			})),
 		});

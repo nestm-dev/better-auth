@@ -6,19 +6,38 @@ export type AdapterRequest = any;
 // oxlint-disable-next-line typescript/no-explicit-any
 export type AdapterResponse = any;
 
+/** One WHATWG-normalized view of the request target, reused by mount and policies. */
+export interface CanonicalRequestTarget {
+	/** The original request target, including its query string. */
+	readonly url: string;
+	/** The WHATWG URL pathname seen by Better Auth's downstream Fetch router. */
+	readonly pathname: string;
+}
+
 export function getRequestUrl(req: AdapterRequest): string {
-	return req?.originalUrl ?? req?.url ?? req?.raw?.url ?? "";
+	return req?.raw?.url ?? req?.url ?? req?.originalUrl ?? "";
 }
 
-export function getRequestPath(req: AdapterRequest): string {
+/**
+ * Apply the same WHATWG URL parsing that the downstream Node-to-Fetch bridge
+ * applies before Better Auth routes a request. In particular, encoded dot
+ * segments are removed here before any base-path or route-policy decision.
+ */
+export function canonicalizeRequestTarget(req: AdapterRequest): CanonicalRequestTarget | undefined {
 	const url = getRequestUrl(req);
-	const queryIndex = url.indexOf("?");
-	return queryIndex === -1 ? url : url.slice(0, queryIndex);
+	if (typeof url !== "string" || url.length === 0) return undefined;
+	try {
+		return {
+			url,
+			pathname: new URL(`http://better-auth.invalid${url}`).pathname,
+		};
+	} catch {
+		return undefined;
+	}
 }
 
-export function matchesBasePath(req: AdapterRequest, basePath: string): boolean {
-	const path = getRequestPath(req);
-	return path === basePath || path.startsWith(`${basePath}/`);
+export function matchesBasePath(pathname: string, basePath: string): boolean {
+	return pathname === basePath || pathname.startsWith(`${basePath}/`);
 }
 
 /** Unwraps Fastify's `req.raw`; Express requests are already Node requests. */

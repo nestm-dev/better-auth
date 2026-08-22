@@ -77,6 +77,7 @@ describe("BetterAuthSessionService", () => {
 				ipAddress: null,
 				userAgent: null,
 				current: false,
+				redactedFields: [],
 			},
 			{
 				id: "current-id",
@@ -86,6 +87,7 @@ describe("BetterAuthSessionService", () => {
 				ipAddress: "192.0.2.10",
 				userAgent: "Test Browser",
 				current: true,
+				redactedFields: [],
 			},
 		]);
 		const serialized = JSON.stringify(result);
@@ -116,6 +118,34 @@ describe("BetterAuthSessionService", () => {
 			revokedCurrentSession: false,
 		});
 		expect(JSON.stringify(result)).not.toContain("other-secret");
+	});
+
+	it("projects oversized display metadata without blocking safe-id revocation", async () => {
+		const oversizedIpAddress = "1".repeat(256);
+		const oversizedUserAgent = "u".repeat(1_025);
+		const api = createApi({
+			listSessions: vi.fn(async (_input: { headers: Headers }) => [
+				session("other-id", "other-secret", {
+					ipAddress: oversizedIpAddress,
+					userAgent: oversizedUserAgent,
+				}),
+				session("current-id", "current-secret"),
+			]),
+		});
+		const { service } = createService(api);
+
+		const listed = await service.list({});
+		await expect(service.revokeById({}, "other-id")).resolves.toMatchObject({ status: true });
+
+		expect(listed[0]).toMatchObject({
+			ipAddress: "1".repeat(255),
+			userAgent: "u".repeat(1_024),
+			redactedFields: ["ipAddress", "userAgent"],
+		});
+		expect(api.revokeSession).toHaveBeenCalledWith({
+			body: { token: "other-secret" },
+			headers: expect.any(Headers),
+		});
 	});
 
 	it("reports when the revoked id belongs to the current session", async () => {

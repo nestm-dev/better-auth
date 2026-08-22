@@ -36,6 +36,10 @@ export type {
 } from "./interfaces/better-auth-module-options.interface.ts";
 export type { BetterAuthFeatureOptions } from "./interfaces/better-auth-feature-options.interface.ts";
 export type { BetterAuthOptionsFactory } from "./interfaces/better-auth-options-factory.interface.ts";
+export type {
+	BetterAuthControlPlaneLifecycleCoordinator,
+	BetterAuthControlPlaneLifecycleScope,
+} from "./interfaces/better-auth-control-plane-lifecycle.interface.ts";
 export type { BetterAuthOrganizationLifecycleCoordinator } from "./interfaces/better-auth-organization-lifecycle.interface.ts";
 export {
 	deny,
@@ -69,6 +73,7 @@ export type { BetterAuthApiInvocation } from "./services/better-auth.service.ts"
 export {
 	BetterAuthSessionService,
 	type BetterAuthSessionBulkRevocationResult,
+	type BetterAuthSessionRedactedField,
 	type BetterAuthSessionRevocationResult,
 	type BetterAuthSessionSummary,
 } from "./services/better-auth-session.service.ts";
@@ -80,9 +85,28 @@ export {
 	type BetterAuthOrganizationMember,
 	type BetterAuthOrganizationMemberList,
 	type BetterAuthOrganizationMemberListOptions,
+	type BetterAuthOrganizationMemberUserRedactedField,
 	type BetterAuthOrganizationRequestHeaders,
 	type BetterAuthReceivedOrganizationInvitation,
 } from "./services/better-auth-organization.service.ts";
+export {
+	BetterAuthUserManagementService,
+	type BetterAuthManagedUser,
+	type BetterAuthManagedUserBanOptions,
+	type BetterAuthManagedUserListFilter,
+	type BetterAuthManagedUserListOptions,
+	type BetterAuthManagedUserPage,
+	type BetterAuthManagedUserProfileUpdate,
+	type BetterAuthManagedUserRedactedField,
+	type BetterAuthManagedUserSearchField,
+	type BetterAuthManagedUserSearchOperator,
+	type BetterAuthManagedUserSession,
+	type BetterAuthManagedUserSessionBulkRevocationResult,
+	type BetterAuthManagedUserSessionRedactedField,
+	type BetterAuthManagedUserSessionRevocationResult,
+	type BetterAuthManagedUserSortDirection,
+	type BetterAuthManagedUserSortField,
+} from "./services/better-auth-user-management.service.ts";
 export {
 	mapBetterAuthApiError,
 	normalizeBetterAuthHeaders,
@@ -98,6 +122,10 @@ export {
 	BETTER_AUTH_ORGANIZATION_CONTROL_PLANE_PATHS,
 	BetterAuthOrganizationControlPlaneRoutePolicy,
 } from "./policies/organization-control-plane-route-policy.ts";
+export {
+	BETTER_AUTH_USER_MANAGEMENT_PATHS,
+	BetterAuthUserManagementRoutePolicy,
+} from "./policies/user-management-route-policy.ts";
 export { createAuthError, type AuthErrorStatus } from "./guards/auth-errors.ts";
 export {
 	MUTATION_ORIGIN_GUARD_OPTIONS,

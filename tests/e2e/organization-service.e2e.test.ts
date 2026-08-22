@@ -292,6 +292,82 @@ describe(`BetterAuthOrganizationService (${testHttpAdapter})`, () => {
 		).toBe("pending");
 	});
 
+	it("keeps hostile stock-valid member profiles role-changeable and removable", async () => {
+		const owner = await signUpUser(app);
+		const organizationId = await createOrganization(app, owner, "hostile-member-profile");
+		const email = `${"e".repeat(400)}-${process.pid}-${Date.now()}@example.com`;
+		const password = "super-secure-password";
+		const signedUp = await request(app.getHttpServer()).post("/api/auth/sign-up/email").send({
+			email,
+			password,
+			name: "",
+		});
+		expect(signedUp.status).toBe(200);
+		const member: SignedUpUser = {
+			email,
+			password,
+			name: "",
+			token: signedUp.body.token,
+			userId: signedUp.body.user.id,
+		};
+		await verifyEmail(member);
+
+		const invited = await inviteThroughFacade(app, owner, organizationId, member);
+		expect(invited.status).toBe(200);
+		const accepted = await request(app.getHttpServer())
+			.post(`/account/organization-invitations/${invited.body.id}/accept`)
+			.set(bearer(member.token));
+		expect(accepted.status).toBe(200);
+		expect(accepted.body.member.user).toEqual({
+			id: member.userId,
+			name: null,
+			email: null,
+			image: null,
+			redactedFields: ["name", "email"],
+		});
+
+		const oversizedName = "n".repeat(300);
+		const oversizedImage = `https://example.com/${"i".repeat(4_100)}`;
+		const updatedProfile = await request(app.getHttpServer())
+			.post("/api/auth/update-user")
+			.set(bearer(member.token))
+			.send({ name: oversizedName, image: oversizedImage });
+		expect(updatedProfile.status).toBe(200);
+
+		const updatedRole = await request(app.getHttpServer())
+			.patch(`/organizations/${organizationId}/members/${accepted.body.member.id}/role`)
+			.set(bearer(owner.token))
+			.send({ role: "admin" });
+		expect(updatedRole.status).toBe(200);
+		expect(updatedRole.body).toMatchObject({
+			id: accepted.body.member.id,
+			role: "admin",
+			user: {
+				id: member.userId,
+				name: "n".repeat(256),
+				email: null,
+				image: null,
+				redactedFields: ["name", "email", "image"],
+			},
+		});
+
+		const removed = await request(app.getHttpServer())
+			.delete(`/organizations/${organizationId}/members/${accepted.body.member.id}`)
+			.set(bearer(owner.token));
+		expect(removed.status).toBe(200);
+		expect(removed.body.user).toEqual(updatedRole.body.user);
+
+		const listed = await request(app.getHttpServer())
+			.get(`/organizations/${organizationId}/members`)
+			.set(bearer(owner.token));
+		expect(listed.status).toBe(200);
+		expect(
+			listed.body.members.some(
+				(candidate: { readonly userId?: unknown }) => candidate.userId === member.userId,
+			),
+		).toBe(false);
+	});
+
 	it("keeps terminal invitation transitions terminal and blocks raw control-plane routes", async () => {
 		const owner = await signUpUser(app);
 		const rejecter = await signUpUser(app);
