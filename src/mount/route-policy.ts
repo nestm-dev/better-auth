@@ -1,7 +1,6 @@
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from "node:http";
 import type { BetterAuthRoutePolicyContext } from "../policies/route-policy.ts";
-import type { AdapterRequest } from "./request-utils.ts";
-import { getRequestPath, getRequestUrl } from "./request-utils.ts";
+import type { CanonicalRequestTarget } from "./request-utils.ts";
 import type { RecoveredBody } from "./body-recovery.ts";
 
 function toWebHeaders(headers: IncomingHttpHeaders): Headers {
@@ -23,18 +22,16 @@ function resolveAuthPath(pathname: string, basePath: string): string {
 }
 
 export function createRoutePolicyContext(
-	frameworkReq: AdapterRequest,
 	nodeReq: IncomingMessage,
 	basePath: string,
 	recoveredBody: RecoveredBody,
+	target: CanonicalRequestTarget,
 ): BetterAuthRoutePolicyContext {
-	const url = getRequestUrl(frameworkReq);
-	const pathname = getRequestPath(frameworkReq);
 	return {
 		method: (nodeReq.method ?? "GET").toUpperCase(),
-		url,
-		pathname,
-		authPath: resolveAuthPath(pathname, basePath),
+		url: target.url,
+		pathname: target.pathname,
+		authPath: resolveAuthPath(target.pathname, basePath),
 		headers: toWebHeaders(nodeReq.headers),
 		body: recoveredBody.body,
 		rawBody: recoveredBody.rawBody,

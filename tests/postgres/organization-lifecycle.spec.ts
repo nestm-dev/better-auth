@@ -2,6 +2,7 @@ import type { BetterAuthOptions } from "better-auth/types";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 import {
+	createTypeormBetterAuthControlPlaneLifecycleCoordinator,
 	createTypeormBetterAuthOrganizationLifecycleCoordinator,
 	typeormAdapter,
 } from "../../src/typeorm/index.ts";
@@ -88,28 +89,60 @@ describe("TypeORM organization lifecycle coordinator", () => {
 		).toBeNull();
 	});
 
-	test("holds an organization-keyed advisory lock until its transaction ends", async () => {
+	test("dual-locks legacy and namespaced organization keys during rolling upgrades", async () => {
 		const dataSource = context.dataSource!;
-		const coordinator = createTypeormBetterAuthOrganizationLifecycleCoordinator(dataSource);
+		const coordinator = createTypeormBetterAuthControlPlaneLifecycleCoordinator(dataSource);
 		const organizationId = "organization-lock-target";
 
-		await coordinator.run(organizationId, async () => {
-			const [sameOrganization, differentOrganization] = await dataSource.transaction(
+		await coordinator.run("organization", organizationId, async () => {
+			const [legacyProcessKey, namespacedKey, differentOrganization] = await dataSource.transaction(
 				async (manager) => {
-					const same = await manager.query(TRY_ADVISORY_LOCK_SQL, [organizationId]);
-					const different = await manager.query(TRY_ADVISORY_LOCK_SQL, ["different-organization"]);
-					return [advisoryLockResult(same), advisoryLockResult(different)] as const;
+					const legacy = await manager.query(TRY_ADVISORY_LOCK_SQL, [organizationId]);
+					const namespaced = await manager.query(TRY_ADVISORY_LOCK_SQL, [
+						`organization:${organizationId}`,
+					]);
+					const different = await manager.query(TRY_ADVISORY_LOCK_SQL, [
+						"organization:different-organization",
+					]);
+					return [
+						advisoryLockResult(legacy),
+						advisoryLockResult(namespaced),
+						advisoryLockResult(different),
+					] as const;
 				},
 			);
 
-			expect(sameOrganization).toBe(false);
+			expect(legacyProcessKey).toBe(false);
+			expect(namespacedKey).toBe(false);
 			expect(differentOrganization).toBe(true);
 		});
 
 		const released = await dataSource.transaction(async (manager) => {
-			const rows = await manager.query(TRY_ADVISORY_LOCK_SQL, [organizationId]);
-			return advisoryLockResult(rows);
+			const legacy = await manager.query(TRY_ADVISORY_LOCK_SQL, [organizationId]);
+			const namespaced = await manager.query(TRY_ADVISORY_LOCK_SQL, [
+				`organization:${organizationId}`,
+			]);
+			return [advisoryLockResult(legacy), advisoryLockResult(namespaced)] as const;
 		});
-		expect(released).toBe(true);
+		expect(released).toEqual([true, true]);
+	});
+
+	test("namespaces equal user and organization ids while sharing the adapter transaction", async () => {
+		const dataSource = context.dataSource!;
+		const coordinator = createTypeormBetterAuthControlPlaneLifecycleCoordinator(dataSource);
+		const resourceId = "shared-resource-id";
+
+		await coordinator.run("user", resourceId, async () => {
+			const [sameUser, sameIdOrganization] = await dataSource.transaction(async (manager) => {
+				const same = await manager.query(TRY_ADVISORY_LOCK_SQL, [`user:${resourceId}`]);
+				const otherScope = await manager.query(TRY_ADVISORY_LOCK_SQL, [
+					`organization:${resourceId}`,
+				]);
+				return [advisoryLockResult(same), advisoryLockResult(otherScope)] as const;
+			});
+
+			expect(sameUser).toBe(false);
+			expect(sameIdOrganization).toBe(true);
+		});
 	});
 });

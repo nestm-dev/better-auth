@@ -21,6 +21,7 @@ import { bearer, signUpUser, type SignedUpUser } from "../shared/auth-client.ts"
 import { createTestApp } from "../shared/test-app.ts";
 import { TEST_BASE_URL, TEST_SECRET } from "../shared/test-auth.ts";
 import { testHttpAdapter } from "../shared/http-adapter.ts";
+import { sendRawHttpRequest } from "../shared/raw-http.ts";
 import type { IncomingHttpHeaders } from "node:http";
 
 const auth = betterAuth({
@@ -97,6 +98,7 @@ describe(`BetterAuthSessionService (${testHttpAdapter})`, () => {
 				],
 			},
 		});
+		await app.listen(0, "127.0.0.1");
 	});
 
 	afterAll(async () => {
@@ -123,6 +125,7 @@ describe(`BetterAuthSessionService (${testHttpAdapter})`, () => {
 				ipAddress: expect.toBeOneOf([expect.any(String), null]),
 				userAgent: expect.toBeOneOf([expect.any(String), null]),
 				current: expect.any(Boolean),
+				redactedFields: expect.any(Array),
 			});
 		}
 		const serialized = JSON.stringify(response.body);
@@ -155,6 +158,36 @@ describe(`BetterAuthSessionService (${testHttpAdapter})`, () => {
 		expect(await sessionForToken(app, currentToken)).toMatchObject({
 			session: { id: expect.any(String) },
 		});
+	});
+
+	it("bounds an oversized stock User-Agent without blocking safe-id revocation", async () => {
+		const user = await signUpUser(app);
+		const oversizedUserAgent = "u".repeat(2_048);
+		const response = await request(app.getHttpServer())
+			.post("/api/auth/sign-in/email")
+			.set("User-Agent", oversizedUserAgent)
+			.send({ email: user.email, password: user.password });
+		expect(response.status).toBe(200);
+		const oversizedAgentToken: string = response.body.token;
+
+		const listed = await request(app.getHttpServer())
+			.get("/account/sessions")
+			.set(bearer(oversizedAgentToken));
+		expect(listed.status).toBe(200);
+		const projected = listed.body.find(
+			(entry: { redactedFields?: readonly string[] }) =>
+				entry.redactedFields?.includes("userAgent") === true,
+		);
+		expect(projected).toMatchObject({
+			userAgent: "u".repeat(1_024),
+			redactedFields: ["userAgent"],
+		});
+
+		const revoked = await request(app.getHttpServer())
+			.post(`/account/sessions/${projected.id}/revoke`)
+			.set(bearer(user.token));
+		expect(revoked.status).toBe(200);
+		expect(await sessionForToken(app, oversizedAgentToken)).toBeNull();
 	});
 
 	it("does not reveal or revoke another user's session by id", async () => {
@@ -221,6 +254,20 @@ describe(`BetterAuthSessionService (${testHttpAdapter})`, () => {
 		for (const response of [rawList, rawRevoke]) {
 			expect(response.status).toBe(403);
 			expect(response.body).toEqual({
+				statusCode: 403,
+				code: "SESSION_MANAGEMENT_FACADE_REQUIRED",
+				message: "Use the application's session-management endpoints.",
+			});
+		}
+		for (const target of [
+			"/api/auth/decoy/%2e%2e/list-sessions",
+			"/api/auth/decoy/.%2e/list-sessions",
+			"/api/auth/decoy/%2e./list-sessions",
+			"/api/decoy/%2e%2e/auth/decoy/%2e%2e/list-sessions",
+		]) {
+			const encodedRawList = await sendRawHttpRequest(app, "GET", target, bearer(user.token));
+			expect(encodedRawList.status, target).toBe(403);
+			expect(encodedRawList.body, target).toEqual({
 				statusCode: 403,
 				code: "SESSION_MANAGEMENT_FACADE_REQUIRED",
 				message: "Use the application's session-management endpoints.",

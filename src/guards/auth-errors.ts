@@ -30,15 +30,20 @@ export async function createAuthError(
 	kind: AuthContextKind,
 	status: AuthErrorStatus,
 	message?: string,
+	code?: string,
 ): Promise<Error> {
+	const statusCode = status === "UNAUTHORIZED" ? 401 : 403;
+	const structuredError = code ? { statusCode, code, message: message ?? status } : undefined;
 	if (kind === "ws") {
 		const WsException = await getWsException();
-		return new WsException(message ?? status);
+		return new WsException(structuredError ?? message ?? status);
 	}
 	if (kind === "rpc") {
-		return new Error(message ?? status);
+		return structuredError
+			? Object.assign(new Error(structuredError.message), structuredError)
+			: new Error(message ?? status);
 	}
 	return status === "UNAUTHORIZED"
-		? new UnauthorizedException(message)
-		: new ForbiddenException(message);
+		? new UnauthorizedException(structuredError ?? message)
+		: new ForbiddenException(structuredError ?? message);
 }

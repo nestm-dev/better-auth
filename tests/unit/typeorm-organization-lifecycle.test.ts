@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { createTypeormBetterAuthControlPlaneLifecycleCoordinator } from "../../src/typeorm/control-plane-lifecycle.ts";
 import { createTypeormBetterAuthOrganizationLifecycleCoordinator } from "../../src/typeorm/organization-lifecycle.ts";
 import type {
 	TypeormCallableCapability,
@@ -69,16 +70,12 @@ describe("TypeORM organization lifecycle coordinator", () => {
 
 		expect(getManager()).toBeUndefined();
 		expect(harness.getTransactionCalls()).toBe(1);
-		expect(harness.queries).toHaveLength(2);
-		expect(harness.queries[0]).toEqual({
-			sql: "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
-			parameters: [organizationId],
-		});
-		expect(harness.queries[0]!.sql).not.toContain(organizationId);
-		expect(harness.queries[1]).toEqual({
-			sql: "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
-			parameters: ["org-2"],
-		});
+		expect(harness.queries).toHaveLength(4);
+		expect(harness.queries.map(({ parameters }) => parameters)).toEqual([
+			...[organizationId, `organization:${organizationId}`].toSorted().map((lockKey) => [lockKey]),
+			...["org-2", "organization:org-2"].toSorted().map((lockKey) => [lockKey]),
+		]);
+		for (const { sql } of harness.queries) expect(sql).not.toContain(organizationId);
 	});
 
 	it("clears the exposed manager and propagates operation failures", async () => {
@@ -113,4 +110,49 @@ describe("TypeORM organization lifecycle coordinator", () => {
 			createTypeormBetterAuthOrganizationLifecycleCoordinator(harness.dataSource),
 		).toThrow(/does not provide the PostgreSQL transaction-scoped advisory locks/);
 	});
+});
+
+describe("TypeORM control-plane lifecycle coordinator", () => {
+	it("shares one context while namespacing equal ids across resource scopes", async () => {
+		const harness = createDataSource();
+		const coordinator = createTypeormBetterAuthControlPlaneLifecycleCoordinator(harness.dataSource);
+
+		await coordinator.run("platform", "global-administrators", async () => {
+			expect(coordinator.getManager()).toBeDefined();
+			await coordinator.run("organization", "same-id", async () => undefined);
+			await coordinator.run("user", "same-id", async () => undefined);
+			await coordinator.run("user", "same-id", async () => undefined);
+		});
+
+		expect(coordinator.getManager()).toBeUndefined();
+		expect(harness.getTransactionCalls()).toBe(1);
+		expect(harness.queries.map(({ parameters }) => parameters)).toEqual([
+			["platform:global-administrators"],
+			["organization:same-id"],
+			["same-id"],
+			["user:same-id"],
+		]);
+	});
+
+	it.each([
+		["invalid", "resource-id", /scope must be one of/],
+		["user", "   ", /resourceId must be a non-empty string/],
+	] as const)(
+		"rejects invalid runtime scope/resource pairs",
+		async (scope, resourceId, expected) => {
+			const harness = createDataSource();
+			const coordinator = createTypeormBetterAuthControlPlaneLifecycleCoordinator(
+				harness.dataSource,
+			);
+
+			await expect(
+				coordinator.run(
+					scope as Parameters<typeof coordinator.run>[0],
+					resourceId,
+					async () => undefined,
+				),
+			).rejects.toThrow(expected);
+			expect(harness.getTransactionCalls()).toBe(0);
+		},
+	);
 });

@@ -1,6 +1,7 @@
 import type { BetterAuthOptions } from "better-auth";
 import type { AnyAuth } from "../types/auth.types.ts";
 import type { BetterAuthRoutePolicy } from "../policies/route-policy.ts";
+import type { BetterAuthControlPlaneLifecycleCoordinator } from "./better-auth-control-plane-lifecycle.interface.ts";
 import type { BetterAuthOrganizationLifecycleCoordinator } from "./better-auth-organization-lifecycle.interface.ts";
 
 /**
@@ -56,8 +57,17 @@ interface BetterAuthModuleCommonOptions {
 	routePolicyBodyLimit?: number;
 	interop?: BetterAuthInteropOptions;
 	/**
+	 * Optional, shared serialization boundary for organization and user
+	 * control-plane mutations. Prefer this over the legacy organization-only
+	 * coordinator when more than one control-plane service is enabled.
+	 */
+	controlPlaneLifecycle?: BetterAuthControlPlaneLifecycleCoordinator;
+	/**
 	 * Optional serialization boundary for organization membership and invitation
 	 * mutations made through `BetterAuthOrganizationService`.
+	 *
+	 * @deprecated Prefer `controlPlaneLifecycle`, which uses one transaction
+	 * context for every Better Auth control-plane service.
 	 */
 	organizationLifecycle?: BetterAuthOrganizationLifecycleCoordinator;
 }

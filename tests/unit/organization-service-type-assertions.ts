@@ -6,6 +6,7 @@ import {
 	type BetterAuthOrganizationInvitationPreview,
 	type BetterAuthOrganizationMember,
 	type BetterAuthOrganizationMemberList,
+	type BetterAuthOrganizationMemberUserRedactedField,
 	type BetterAuthReceivedOrganizationInvitation,
 } from "../../src/index.ts";
 import type { IncomingHttpHeaders } from "node:http";
@@ -64,10 +65,15 @@ const rejected: Promise<BetterAuthOrganizationInvitation> = service.rejectInvita
 async function assertSafeOrganizationSurface(): Promise<void> {
 	const firstMember = (await members).members[0];
 	if (firstMember) {
-		const email: string = firstMember.user.email;
+		const name: string | null = firstMember.user.name;
+		const email: string | null = firstMember.user.email;
+		const redactedFields: readonly BetterAuthOrganizationMemberUserRedactedField[] =
+			firstMember.user.redactedFields;
 		// @ts-expect-error Public member users never expose password material.
 		const password = firstMember.user.password;
+		void name;
 		void email;
+		void redactedFields;
 		void password;
 	}
 	const invitation = await sent;

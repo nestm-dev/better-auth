@@ -78,6 +78,26 @@ describe(`rest auth (${testHttpAdapter})`, () => {
 		expect(anonymous.body).toEqual({ authenticated: false });
 	});
 
+	it("does not expose a retained actively banned identity on a resolve-session public route", async () => {
+		const user = await signUpUser(app);
+		const context = await auth.$context;
+		await context.internalAdapter.updateUser(user.userId, {
+			banned: true,
+			banExpires: new Date(Date.now() + 60_000),
+		});
+
+		const response = await request(app.getHttpServer())
+			.get("/test/public-with-session")
+			.set(bearer(user.token));
+
+		expect(response.status).toBe(403);
+		expect(response.body).toEqual({
+			statusCode: 403,
+			code: "BANNED_USER",
+			message: "User is banned.",
+		});
+	});
+
 	it("@OptionalAuth allows both authenticated and anonymous access", async () => {
 		const anonymous = await request(app.getHttpServer()).get("/test/optional");
 		expect(anonymous.status).toBe(200);

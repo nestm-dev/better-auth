@@ -4,6 +4,13 @@ import type { AnyAuth, RegisteredAuth } from "../types/auth.types.ts";
 import type { BetterAuthApiHeaders } from "./better-auth-api-invocation.ts";
 import { BetterAuthService } from "./better-auth.service.ts";
 
+const MAX_SESSION_IDENTIFIER_LENGTH = 1_024;
+const MAX_SESSION_TOKEN_LENGTH = 4_096;
+const MAX_IP_ADDRESS_LENGTH = 255;
+const MAX_USER_AGENT_LENGTH = 1_024;
+
+export type BetterAuthSessionRedactedField = "ipAddress" | "userAgent";
+
 /** Token-free session information safe to return from an application API. */
 export interface BetterAuthSessionSummary {
 	readonly id: string;
@@ -13,6 +20,8 @@ export interface BetterAuthSessionSummary {
 	readonly ipAddress: string | null;
 	readonly userAgent: string | null;
 	readonly current: boolean;
+	/** Display metadata truncated to keep this response bounded. */
+	readonly redactedFields: readonly BetterAuthSessionRedactedField[];
 }
 
 /** Result of revoking one caller-owned session by its public-safe identifier. */
@@ -46,6 +55,7 @@ interface PrivateSessionRecord {
 	readonly expiresAt: Date;
 	readonly ipAddress: string | null;
 	readonly userAgent: string | null;
+	readonly redactedFields: readonly BetterAuthSessionRedactedField[];
 }
 
 interface OwnedSessions {
@@ -94,21 +104,44 @@ function coreSessionApi(value: unknown): CoreSessionApi {
 	};
 }
 
-function requiredString(record: Record<string, unknown>, field: string): string {
+function requiredString(
+	record: Record<string, unknown>,
+	field: string,
+	maximumLength: number,
+): string {
 	const value = record[field];
-	if (typeof value !== "string" || value.length === 0) {
+	if (typeof value !== "string" || value.length === 0 || value.length > maximumLength) {
 		throw new TypeError(`Better Auth returned an invalid session '${field}'.`);
 	}
 	return value;
 }
 
-function optionalString(record: Record<string, unknown>, field: string): string | null {
-	const value = record[field];
-	if (value === null || value === undefined) return null;
-	if (typeof value !== "string") {
-		throw new TypeError(`Better Auth returned an invalid session '${field}'.`);
+function truncateDisplayString(value: string, maximumLength: number): string {
+	let result = value.slice(0, maximumLength);
+	const finalCodeUnit = result.charCodeAt(result.length - 1);
+	const nextCodeUnit = value.charCodeAt(result.length);
+	if (
+		finalCodeUnit >= 0xd800 &&
+		finalCodeUnit <= 0xdbff &&
+		nextCodeUnit >= 0xdc00 &&
+		nextCodeUnit <= 0xdfff
+	) {
+		result = result.slice(0, -1);
 	}
-	return value;
+	return result;
+}
+
+function projectedOptionalString(
+	record: Record<string, unknown>,
+	field: string,
+	maximumLength: number,
+): { readonly redacted: boolean; readonly value: string | null } {
+	const value = record[field];
+	if (value === null || value === undefined) return { redacted: false, value: null };
+	if (typeof value !== "string") return { redacted: true, value: null };
+	return value.length > maximumLength
+		? { redacted: true, value: truncateDisplayString(value, maximumLength) }
+		: { redacted: false, value };
 }
 
 function requiredDate(record: Record<string, unknown>, field: string): Date {
@@ -126,14 +159,20 @@ function requiredDate(record: Record<string, unknown>, field: string): Date {
 
 function privateSession(value: unknown): PrivateSessionRecord {
 	if (!isRecord(value)) throw new TypeError("Better Auth returned an invalid session.");
+	const redactedFields: BetterAuthSessionRedactedField[] = [];
+	const ipAddress = projectedOptionalString(value, "ipAddress", MAX_IP_ADDRESS_LENGTH);
+	if (ipAddress.redacted) redactedFields.push("ipAddress");
+	const userAgent = projectedOptionalString(value, "userAgent", MAX_USER_AGENT_LENGTH);
+	if (userAgent.redacted) redactedFields.push("userAgent");
 	return {
-		id: requiredString(value, "id"),
-		token: requiredString(value, "token"),
+		id: requiredString(value, "id", MAX_SESSION_IDENTIFIER_LENGTH),
+		token: requiredString(value, "token", MAX_SESSION_TOKEN_LENGTH),
 		createdAt: requiredDate(value, "createdAt"),
 		updatedAt: requiredDate(value, "updatedAt"),
 		expiresAt: requiredDate(value, "expiresAt"),
-		ipAddress: optionalString(value, "ipAddress"),
-		userAgent: optionalString(value, "userAgent"),
+		ipAddress: ipAddress.value,
+		userAgent: userAgent.value,
+		redactedFields,
 	};
 }
 
@@ -142,7 +181,7 @@ function currentSessionId(value: unknown): string | undefined {
 	if (!isRecord(value) || !isRecord(value.session)) {
 		throw new TypeError("Better Auth returned an invalid current session.");
 	}
-	return requiredString(value.session, "id");
+	return requiredString(value.session, "id", MAX_SESSION_IDENTIFIER_LENGTH);
 }
 
 function privateSessions(value: unknown): readonly PrivateSessionRecord[] {
@@ -200,6 +239,7 @@ export class BetterAuthSessionService<TAuth extends AnyAuth = RegisteredAuth> {
 			ipAddress: session.ipAddress,
 			userAgent: session.userAgent,
 			current: session.id === owned.currentSessionId,
+			redactedFields: session.redactedFields,
 		}));
 	}
 

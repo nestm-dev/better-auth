@@ -35,6 +35,12 @@ interface InternalSessionAdapter {
 
 type OrganizationApiOperation = (input: unknown) => Promise<unknown>;
 
+const MAX_MEMBER_NAME_LENGTH = 256;
+const MAX_MEMBER_EMAIL_LENGTH = 320;
+const MAX_MEMBER_IMAGE_LENGTH = 4_096;
+
+export type BetterAuthOrganizationMemberUserRedactedField = "name" | "email" | "image";
+
 /** Public, normalized organization member returned by the lifecycle facade. */
 export interface BetterAuthOrganizationMember {
 	readonly id: string;
@@ -44,9 +50,11 @@ export interface BetterAuthOrganizationMember {
 	readonly createdAt: Date;
 	readonly user: {
 		readonly id: string;
-		readonly name: string;
-		readonly email: string;
+		readonly name: string | null;
+		readonly email: string | null;
 		readonly image: string | null;
+		/** Display fields projected or omitted to keep this response bounded. */
+		readonly redactedFields: readonly BetterAuthOrganizationMemberUserRedactedField[];
 	};
 }
 
@@ -119,19 +127,6 @@ function requiredString(record: Record<string, unknown>, field: string, label: s
 	return value;
 }
 
-function optionalString(
-	record: Record<string, unknown>,
-	field: string,
-	label: string,
-): string | null {
-	const value = record[field];
-	if (value === undefined || value === null) return null;
-	if (typeof value !== "string") {
-		throw invalidResponse(`Better Auth returned an invalid ${label}.${field}.`);
-	}
-	return value;
-}
-
 function requiredDate(record: Record<string, unknown>, field: string, label: string): Date {
 	const value = record[field];
 	const date =
@@ -174,17 +169,91 @@ function basicMember(value: unknown): Omit<BetterAuthOrganizationMember, "user">
 	};
 }
 
+function truncateDisplayString(value: string, maximumLength: number): string {
+	let result = value.slice(0, maximumLength);
+	const finalCodeUnit = result.charCodeAt(result.length - 1);
+	const nextCodeUnit = value.charCodeAt(result.length);
+	if (
+		finalCodeUnit >= 0xd800 &&
+		finalCodeUnit <= 0xdbff &&
+		nextCodeUnit >= 0xdc00 &&
+		nextCodeUnit <= 0xdfff
+	) {
+		result = result.slice(0, -1);
+	}
+	return result;
+}
+
+function isFacadeEmail(value: string): boolean {
+	const separator = value.indexOf("@");
+	if (separator <= 0 || separator !== value.lastIndexOf("@")) return false;
+
+	const localPart = value.slice(0, separator);
+	const domain = value.slice(separator + 1);
+	if (
+		localPart.length > 64 ||
+		domain.length === 0 ||
+		domain.length > 253 ||
+		localPart.startsWith(".") ||
+		localPart.endsWith(".") ||
+		localPart.includes("..") ||
+		!/^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+$/.test(localPart)
+	) {
+		return false;
+	}
+
+	return domain
+		.split(".")
+		.every(
+			(label) =>
+				label.length > 0 &&
+				label.length <= 63 &&
+				/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/.test(label),
+		);
+}
+
 function publicMember(value: unknown): BetterAuthOrganizationMember {
 	const member = requiredRecord(value, "organization member");
 	const normalized = basicMember(member);
 	const user = requiredRecord(member.user, "organization member.user");
+	const redactedFields: BetterAuthOrganizationMemberUserRedactedField[] = [];
+	const sourceName = user.name;
+	let name: string | null = typeof sourceName === "string" ? sourceName : null;
+	if (typeof sourceName !== "string" || sourceName.length === 0) {
+		redactedFields.push("name");
+		name = null;
+	} else if (sourceName.length > MAX_MEMBER_NAME_LENGTH) {
+		redactedFields.push("name");
+		name = truncateDisplayString(sourceName, MAX_MEMBER_NAME_LENGTH);
+	}
+	const sourceEmail = user.email;
+	let email: string | null = typeof sourceEmail === "string" ? sourceEmail : null;
+	if (
+		typeof sourceEmail !== "string" ||
+		sourceEmail.length === 0 ||
+		sourceEmail.length > MAX_MEMBER_EMAIL_LENGTH ||
+		!isFacadeEmail(sourceEmail)
+	) {
+		redactedFields.push("email");
+		email = null;
+	}
+	const sourceImage = user.image;
+	let image: string | null = typeof sourceImage === "string" ? sourceImage : null;
+	if (sourceImage !== undefined && sourceImage !== null && typeof sourceImage !== "string") {
+		redactedFields.push("image");
+		image = null;
+	} else if (typeof sourceImage === "string" && sourceImage.length > MAX_MEMBER_IMAGE_LENGTH) {
+		redactedFields.push("image");
+		image = null;
+	}
 	return {
 		...normalized,
 		user: {
 			id: requiredString(user, "id", "organization member.user"),
-			name: requiredString(user, "name", "organization member.user"),
-			email: requiredString(user, "email", "organization member.user"),
-			image: optionalString(user, "image", "organization member.user"),
+			name,
+			email,
+			image,
+			redactedFields,
 		},
 	};
 }
@@ -658,7 +727,11 @@ export class BetterAuthOrganizationService<TAuth extends AnyAuth = RegisteredAut
 	}
 
 	private runMutation<T>(organizationId: string, operation: () => Promise<T>): Promise<T> {
-		return this.moduleOptions.organizationLifecycle?.run(organizationId, operation) ?? operation();
+		return (
+			this.moduleOptions.controlPlaneLifecycle?.run("organization", organizationId, operation) ??
+			this.moduleOptions.organizationLifecycle?.run(organizationId, operation) ??
+			operation()
+		);
 	}
 
 	private async readOrganizationInvitations(
