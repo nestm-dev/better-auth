@@ -36,6 +36,7 @@ export type {
 } from "./interfaces/better-auth-module-options.interface.ts";
 export type { BetterAuthFeatureOptions } from "./interfaces/better-auth-feature-options.interface.ts";
 export type { BetterAuthOptionsFactory } from "./interfaces/better-auth-options-factory.interface.ts";
+export type { BetterAuthOrganizationLifecycleCoordinator } from "./interfaces/better-auth-organization-lifecycle.interface.ts";
 export {
 	deny,
 	type BetterAuthRoutePolicy,
@@ -72,6 +73,17 @@ export {
 	type BetterAuthSessionSummary,
 } from "./services/better-auth-session.service.ts";
 export {
+	BetterAuthOrganizationService,
+	type BetterAuthOrganizationInvitation,
+	type BetterAuthOrganizationInvitationAcceptance,
+	type BetterAuthOrganizationInvitationPreview,
+	type BetterAuthOrganizationMember,
+	type BetterAuthOrganizationMemberList,
+	type BetterAuthOrganizationMemberListOptions,
+	type BetterAuthOrganizationRequestHeaders,
+	type BetterAuthReceivedOrganizationInvitation,
+} from "./services/better-auth-organization.service.ts";
+export {
 	mapBetterAuthApiError,
 	normalizeBetterAuthHeaders,
 	type BetterAuthApiErrorResponse,
@@ -82,6 +94,10 @@ export {
 	BETTER_AUTH_SESSION_MANAGEMENT_PATHS,
 	BetterAuthSessionManagementRoutePolicy,
 } from "./policies/session-management-route-policy.ts";
+export {
+	BETTER_AUTH_ORGANIZATION_CONTROL_PLANE_PATHS,
+	BetterAuthOrganizationControlPlaneRoutePolicy,
+} from "./policies/organization-control-plane-route-policy.ts";
 export { createAuthError, type AuthErrorStatus } from "./guards/auth-errors.ts";
 export {
 	MUTATION_ORIGIN_GUARD_OPTIONS,

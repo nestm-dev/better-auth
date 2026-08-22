@@ -30,8 +30,11 @@ const EXPECTED_VALUE_EXPORTS = [
 	// services & guard
 	"BetterAuthService",
 	"BetterAuthSessionService",
+	"BetterAuthOrganizationService",
 	"BetterAuthSessionManagementRoutePolicy",
 	"BETTER_AUTH_SESSION_MANAGEMENT_PATHS",
+	"BetterAuthOrganizationControlPlaneRoutePolicy",
+	"BETTER_AUTH_ORGANIZATION_CONTROL_PLANE_PATHS",
 	"BetterAuthGuard",
 	"MutationOriginGuard",
 	"MUTATION_ORIGIN_GUARD_OPTIONS",

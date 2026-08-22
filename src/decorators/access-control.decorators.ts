@@ -46,7 +46,7 @@ export const Roles = Reflector.createDecorator<string | readonly string[], strin
 	transform: toRoleArray,
 });
 
-/** Requires an active organization on the session (organization plugin). */
+/** Requires an active organization and a live membership in it (organization plugin). */
 export const RequireActiveOrg = Reflector.createDecorator<void, true>({
 	key: METADATA_KEY.requireActiveOrg,
 	transform: () => true,

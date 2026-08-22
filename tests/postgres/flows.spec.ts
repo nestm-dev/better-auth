@@ -48,11 +48,19 @@ describe.each(ARMS)("flows on the %s adapter", (arm: Arm) => {
 		expect(result.memberOrganizationIds).toEqual([result.organizationId]);
 	});
 
-	test("counts, sorts, limits and offsets", () => {
+	test("counts, sorts, limits and offsets", async () => {
 		expect(result.memberCount).toBe(2);
 		expect(result.fullOrganizationMemberCount).toBe(2);
 		expect(result.sortedMemberUserIds).toHaveLength(2);
-		expect([...result.sortedMemberUserIds].sort()).toEqual(result.sortedMemberUserIds);
+		const reverseSortedMembers = await context.auth.db.findMany<{ userId: string }>({
+			model: "member",
+			where: [{ field: "organizationId", value: result.organizationId }],
+			sortBy: { field: "userId", direction: "desc" },
+			limit: 10,
+		});
+		expect(reverseSortedMembers.map((member) => member.userId)).toEqual(
+			result.sortedMemberUserIds.toReversed(),
+		);
 		expect(result.pagedOrganizationSlugs).toEqual([ORG_SLUG]);
 		expect(result.pagedPastEndIsEmpty).toBe(true);
 	});

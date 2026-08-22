@@ -1,4 +1,8 @@
 export { typeormAdapter } from "./adapter.ts";
+export {
+	createTypeormBetterAuthOrganizationLifecycleCoordinator,
+	type TypeormBetterAuthOrganizationLifecycleCoordinator,
+} from "./organization-lifecycle.ts";
 export type {
 	TypeormAdapterConfig,
 	TypeormColumnMetadata,

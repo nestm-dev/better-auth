@@ -86,6 +86,41 @@ describe(`organization roles (${testHttpAdapter})`, () => {
 		expect(response.status).toBe(200);
 	});
 
+	it("@RequireActiveOrg rejects a stale organization selector after remote member removal", async () => {
+		const owner = await signUpUser(app);
+		const organizationId = await createActiveOrganization(app, owner, "revoked");
+		const member = await signUpUser(app);
+		const invited = await request(app.getHttpServer())
+			.post("/api/auth/organization/invite-member")
+			.set(bearer(owner.token))
+			.send({ email: member.email, organizationId, role: "member" });
+		expect(invited.status).toBe(200);
+
+		const accepted = await request(app.getHttpServer())
+			.post("/api/auth/organization/accept-invitation")
+			.set(bearer(member.token))
+			.send({ invitationId: invited.body.id });
+		expect(accepted.status).toBe(200);
+		const memberId: string = accepted.body.member.id;
+
+		const beforeRemoval = await request(app.getHttpServer())
+			.get("/org/requires-active")
+			.set(bearer(member.token));
+		expect(beforeRemoval.status).toBe(200);
+
+		const removed = await request(app.getHttpServer())
+			.post("/api/auth/organization/remove-member")
+			.set(bearer(owner.token))
+			.send({ memberIdOrEmail: memberId, organizationId });
+		expect(removed.status).toBe(200);
+
+		const afterRemoval = await request(app.getHttpServer())
+			.get("/org/requires-active")
+			.set(bearer(member.token));
+		expect(afterRemoval.status).toBe(403);
+		expect(afterRemoval.body.message).toBe("Active organization membership is required");
+	});
+
 	it("@OrgRoles allows the organization owner", async () => {
 		const user = await signUpUser(app);
 		await createActiveOrganization(app, user, "owner");
