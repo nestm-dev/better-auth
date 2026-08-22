@@ -1,5 +1,44 @@
 # @nestm/better-auth
 
+## 0.1.0-alpha.8
+
+### Minor Changes
+
+- 32f4c44: Allow the TypeORM adapter's Better Auth transactions to join an application-owned transaction
+  returned by `getManager`. This keeps auth mutations atomic with audit and outbox writes made
+  through the same scoped manager, while retaining `dataSource.transaction()` as the fallback.
+- 32f4c44: Add a plugin-aware `BetterAuthService.invokeApi()` boundary for application-owned Nest
+  controllers. It normalizes Node request headers to Web Headers, preserves endpoint result types,
+  and translates Better Auth API errors into stable Nest HTTP exceptions.
+- 56b4467: Add a stock-Better-Auth-compatible platform user-management facade with bounded user queries and
+  profile/role/ban mutations, token-free active session summaries, safe owned-session-id revocation,
+  and an opt-in policy closing the raw admin HTTP namespace. Generalize the TypeORM organization
+  lifecycle coordinator into one namespaced organization/user/platform control-plane coordinator
+  while preserving the organization-only API. Canonicalize raw request targets before auth mount and
+  policy matching so encoded dot segments cannot bypass protected routes, and dual-acquire legacy
+  plus namespaced organization advisory locks for safe rolling upgrades. The guard now rejects
+  retained sessions for actively banned users while respecting valid expired bans, and expiry-omitted
+  re-bans no longer retain a previous temporary expiry. Stock-valid hostile profile and session
+  display fields are projected into explicit bounded/redacted outputs instead of blocking admin
+  enforcement or safe session revocation. Organization member identity fields use the same bounded,
+  explicit projection so hostile profile display data cannot block role changes or removals.
+- 32f4c44: Add `BetterAuthSessionService`, an injectable application-facing session facade with token-free
+  summaries, authoritative current-session detection, strict caller-owned id revocation, and bulk
+  revocation helpers. Add an opt-in `BetterAuthSessionManagementRoutePolicy` that blocks Better
+  Auth's raw token-bearing HTTP session endpoints once an application facade is mounted.
+- 6a14f6a: Add a stock-Better-Auth-compatible organization control plane with normalized member and
+  invitation results, ID-bound invitation resend, serialized lifecycle mutations, and raw-route
+  policy enforcement. Add a PostgreSQL TypeORM coordinator that shares one application-owned
+  transaction and organization advisory lock with the Better Auth adapter. Active-organization
+  guards now bypass cookie caches and verify live membership before authorizing a request.
+- d906e39: Add a reusable, fail-closed Nest `MutationOriginGuard` with strict trusted-origin canonicalization and Fetch Metadata fallback for state-changing controller routes.
+
+### Patch Changes
+
+- d906e39: Make the TypeORM adapter accept validated structural DataSource, metadata, and manager capabilities
+  so linked-workspace consumers do not need casts when TypeORM is installed at multiple physical
+  paths.
+
 ## 0.1.0-alpha.7
 
 ### Minor Changes

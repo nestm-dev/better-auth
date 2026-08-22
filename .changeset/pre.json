@@ -9,8 +9,15 @@
     "calm-request-state",
     "clever-policies-compose",
     "initial-release",
+    "join-application-transactions",
+    "nest-api-invocation",
+    "portable-typeorm-capabilities",
     "public-metadata-interop",
     "quiet-routes-decide",
+    "safe-platform-user-management",
+    "safe-session-management",
+    "stock-organization-control-plane",
+    "strict-mutation-origins",
     "typeorm-database-adapter"
   ]
 }
