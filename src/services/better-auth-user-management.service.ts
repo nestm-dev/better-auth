@@ -816,7 +816,7 @@ export class BetterAuthUserManagementService<TAuth extends AnyAuth = RegisteredA
 					);
 
 				if (normalized.expiresInSeconds === undefined && current.banExpiresAt !== null) {
-					// Stock Better Auth 1.6.26 preserves a previous banExpires when
+					// Stock Better Auth 1.7.2 preserves a previous banExpires when
 					// banUser omits it. Clear it while keeping the target banned first:
 					// if the final ban fails, the account remains fail-closed.
 					await api.call("adminUpdateUser", {

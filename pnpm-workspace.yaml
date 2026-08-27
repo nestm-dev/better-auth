@@ -1,14 +1,9 @@
 packages:
   - "."
 
-# Nest 12.0.0-alpha.* still declares ^11.0.0 peers on its own siblings.
-peerDependencyRules:
-  allowedVersions:
-    "@nestjs/common": "12"
-    "@nestjs/core": "12"
-    "@nestjs/platform-express": "12"
-    "@nestjs/websockets": "12"
-    "@nestjs/microservices": "12"
+# Security-patch transitive dependency pinned by the test toolchain.
+overrides:
+  "nanoid@3.3.16": "3.3.18"
 
 # @nestjs/core's postinstall is only a donation banner; never run it.
 allowBuilds:
@@ -19,3 +14,15 @@ allowBuilds:
 # explicit-provenance branch, making a failed attestation a HARD publish
 # error instead of a silent "Skipped setting provenance" warning.
 provenance: true
+
+minimumReleaseAgeExclude:
+  - "@nestjs/common@12.0.1"
+  - "@nestjs/core@12.0.1"
+  - "@nestjs/graphql@14.0.0"
+  - "@nestjs/mapped-types@12.0.0"
+  - "@nestjs/platform-express@12.0.1"
+  - "@nestjs/platform-fastify@12.0.1"
+  - "@nestjs/platform-socket.io@12.0.1"
+  - "@nestjs/testing@12.0.1"
+  - "@nestjs/websockets@12.0.1"
+  - "@types/node@26.4.0"

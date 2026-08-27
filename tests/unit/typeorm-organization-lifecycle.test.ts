@@ -108,7 +108,7 @@ describe("TypeORM organization lifecycle coordinator", () => {
 
 		expect(() =>
 			createTypeormBetterAuthOrganizationLifecycleCoordinator(harness.dataSource),
-		).toThrow(/does not provide the PostgreSQL transaction-scoped advisory locks/);
+		).toThrow(/only verified against TypeORM's standard "postgres" driver/);
 	});
 });
 

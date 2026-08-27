@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { APIError } from "better-auth/api";
 import { BetterAuthHookRegistry, mergeHookContext, resolveAuthBasePath } from "../../src/index.ts";
+import { compileHookMatcher } from "../../src/hooks/hook-matcher.ts";
 import type { AnyAuth, AuthHookContext } from "../../src/index.ts";
 
 function ctx(path = "/x"): AuthHookContext {
@@ -40,6 +41,20 @@ describe("mergeHookContext", () => {
 		const headers = merged.headers as Headers;
 		expect(headers.get("x-a")).toBe("1");
 		expect(headers.get("x-b")).toBe("2");
+	});
+});
+
+describe("compileHookMatcher", () => {
+	it.each([
+		["global", /^\/sign-up\/email$/g],
+		["sticky", /^\/sign-up\/email$/y],
+	] as const)("resets a %s RegExp matcher between requests", (_label, pattern) => {
+		const match = compileHookMatcher(pattern);
+
+		expect(match(ctx("/sign-up/email"))).toBe(true);
+		expect(pattern.lastIndex).toBe(0);
+		expect(match(ctx("/sign-up/email"))).toBe(true);
+		expect(pattern.lastIndex).toBe(0);
 	});
 });
 

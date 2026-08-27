@@ -18,7 +18,7 @@ import { AUTH_ENTITIES } from "./entities.ts";
 export const ARMS = ["drizzle", "typeorm"] as const;
 export type Arm = (typeof ARMS)[number];
 
-/** The 11 tables the differential captures, in a fixed order. */
+/** The 16 tables the differential captures, in a fixed order. */
 export const AUTH_TABLES = [
 	"user",
 	"session",
@@ -27,9 +27,14 @@ export const AUTH_TABLES = [
 	"organization",
 	"member",
 	"invitation",
-	"oauth_application",
+	"jwks",
+	"oauth_client",
+	"oauth_resource",
+	"oauth_client_resource",
+	"oauth_refresh_token",
 	"oauth_access_token",
 	"oauth_consent",
+	"oauth_client_assertion",
 	"rate_limit",
 ] as const;
 
@@ -178,7 +183,12 @@ const VOLATILE_COLUMNS = new Set([
 	"active_organization_id",
 	"inviter_id",
 	"client_id",
+	"session_id",
+	"refresh_id",
+	"authorization_code_id",
 	"client_secret",
+	"private_key",
+	"public_key",
 	"access_token",
 	"refresh_token",
 	"password",
@@ -191,8 +201,9 @@ const VOLATILE_COLUMNS = new Set([
 	"last_request",
 	"key",
 	"identifier",
+	"resource_id",
 	"slug",
-	"redirect_urls",
+	"redirect_uris",
 ]);
 
 /**
@@ -222,7 +233,7 @@ export function normalizeRow(row: Record<string, unknown>): Record<string, unkno
 }
 
 /**
- * Captures all 11 tables, normalised and put into a canonical order.
+ * Captures all 16 tables, normalised and put into a canonical order.
  *
  * The rows cannot be compared in primary-key order: ids are random, so "ordered by id" is a
  * different order in each arm. Sorting by the serialised NORMALISED row gives an order that

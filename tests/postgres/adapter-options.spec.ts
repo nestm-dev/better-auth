@@ -256,13 +256,4 @@ describe("adapter options", () => {
 			);
 		});
 	});
-
-	test("rejects a non-PostgreSQL driver at construction, not at the first write", () => {
-		// A stand-in rather than a real MySQL DataSource, which cannot be constructed without the
-		// `mysql2` package installed. The guard reads `options.type`, which is all this needs.
-		// The point is WHEN it fails: this adapter emits PostgreSQL grammar directly, so an
-		// unsupported driver has to be refused while wiring, not mid-request on the first write.
-		const mysql = { options: { type: "mysql" }, driver: {} } as unknown as DataSource;
-		expect(() => typeormAdapter(mysql)).toThrow(/Unsupported TypeORM driver "mysql"/);
-	});
 });

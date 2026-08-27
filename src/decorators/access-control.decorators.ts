@@ -64,8 +64,6 @@ export const OrgRoles = Reflector.createDecorator<string | readonly string[], st
 export interface PermissionCheckOptions {
 	/** Access-control statement, e.g. `{ project: ["create"] }`. */
 	permissions: Record<string, string[]>;
-	/** Check against an explicit role instead of the user's own. */
-	role?: string;
 }
 
 function assertPermissions(options: PermissionCheckOptions): PermissionCheckOptions {

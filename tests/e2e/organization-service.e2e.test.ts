@@ -256,7 +256,7 @@ describe(`BetterAuthOrganizationService (${testHttpAdapter})`, () => {
 		expect(session.body.session.activeOrganizationId).toBeNull();
 	});
 
-	it("replaces expired resends and expired same-email re-invites on stock 1.6.26", async () => {
+	it("replaces expired resends and expired same-email re-invites on stock 1.7.2", async () => {
 		const owner = await signUpUser(app);
 		const firstInvitee = await signUpUser(app);
 		const secondInvitee = await signUpUser(app);

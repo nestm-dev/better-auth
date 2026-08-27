@@ -2,7 +2,15 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 import { ARMS, createArm } from "./harness.ts";
 import type { Arm, ArmContext } from "./harness.ts";
-import { MEMBER_EMAIL, ORG_SLUG, runScenario, scenarioOptions } from "./scenario.ts";
+import {
+	MEMBER_EMAIL,
+	MCP_RESOURCE,
+	OAUTH_ACCOUNT_ID,
+	OAUTH_PROVIDER_ID,
+	ORG_SLUG,
+	runScenario,
+	scenarioOptions,
+} from "./scenario.ts";
 import type { ScenarioResult } from "./scenario.ts";
 
 /**
@@ -42,6 +50,12 @@ describe.each(ARMS)("flows on the %s adapter", (arm: Arm) => {
 		expect(verifications).toHaveLength(0);
 	});
 
+	test("completes a generic OAuth/OIDC callback and persists its account", () => {
+		expect(result.oauthUserId.length).toBeGreaterThan(0);
+		expect(result.oauthAccountId).toBe(OAUTH_ACCOUNT_ID);
+		expect(result.oauthProviderId).toBe(OAUTH_PROVIDER_ID);
+	});
+
 	test("creates an organization, invites, and accepts", () => {
 		expect(result.organizationId.length).toBeGreaterThan(0);
 		expect(result.invitationStatus).toBe("accepted");
@@ -68,8 +82,25 @@ describe.each(ARMS)("flows on the %s adapter", (arm: Arm) => {
 	test("completes the MCP OAuth register / authorize / token exchange", async () => {
 		expect(result.clientId.length).toBeGreaterThan(0);
 		expect(result.hasAccessToken).toBe(true);
-		const tokens = await context.readTable("oauth_access_token");
-		expect(tokens).toHaveLength(1);
+		const [clients, resources, links, consents, signingKeys, opaqueTokens] = await Promise.all([
+			context.readTable("oauth_client"),
+			context.readTable("oauth_resource"),
+			context.readTable("oauth_client_resource"),
+			context.readTable("oauth_consent"),
+			context.readTable("jwks"),
+			context.readTable("oauth_access_token"),
+		]);
+		expect(clients).toHaveLength(1);
+		expect(clients[0]?.client_id).toBe(result.clientId);
+		expect(resources).toHaveLength(1);
+		expect(resources[0]?.identifier).toBe(MCP_RESOURCE);
+		expect(links).toHaveLength(1);
+		expect(links[0]).toMatchObject({ client_id: result.clientId, resource_id: MCP_RESOURCE });
+		expect(consents).toHaveLength(1);
+		expect(signingKeys).toHaveLength(1);
+		// The released MCP preset issues audience-bound JWT access tokens. Only opaque tokens use
+		// `oauth_access_token`, so a successful JWT exchange deliberately leaves it empty.
+		expect(opaqueTokens).toHaveLength(0);
 	});
 
 	describe("where operators", () => {

@@ -2,23 +2,21 @@ import { BetterAuthError } from "better-auth";
 import type { TypeormDataSource } from "./types.ts";
 
 /**
- * The TypeORM driver types this adapter emits verified SQL for.
+ * The TypeORM driver type this adapter emits verified SQL for.
  *
  * The adapter writes SQL by hand rather than through `QueryBuilder` (see `adapter.ts` for
  * why), so every grammar it emits — `RETURNING`, `x AT TIME ZONE 'UTC'`, `UPDATE t AS a`,
  * `DELETE FROM t AS a` — is a dialect commitment rather than something the ORM abstracts.
- * All three entries here share TypeORM's Postgres driver and its grammar.
+ * Only TypeORM's standard `postgres` driver is accepted. `aurora-postgres` and
+ * `cockroachdb` expose PostgreSQL-flavoured APIs, but neither is exercised by the adapter's
+ * conformance suite, and their query-result or transaction behaviour is not assumed to match.
  *
  * Other drivers are rejected at construction instead of being half-supported: a MySQL user
  * would otherwise get `UPDATE ... RETURNING` syntax errors at the first write, and a SQLite
  * user would silently lose the UTC timestamp projection. Widening this set means adding the
  * dialect's grammar to `sql.ts` and a conformance arm to `tests/postgres/`.
  */
-const VERIFIED_DRIVER_TYPES: ReadonlySet<string> = new Set([
-	"postgres",
-	"aurora-postgres",
-	"cockroachdb",
-]);
+const VERIFIED_DRIVER_TYPE = "postgres";
 
 /**
  * The dialect-specific primitives the statement builder needs.
@@ -33,10 +31,9 @@ export interface TypeormDialect {
 	/**
 	 * Whether `INSERT`/`UPDATE`/`DELETE ... RETURNING` is available.
 	 *
-	 * `consumeOne` and `incrementOne` are single-statement compare-and-swaps that must read
-	 * back the row they mutated, so they are only attached to the adapter when this is true.
-	 * With it false the factory's documented `transaction(findMany + deleteMany/updateMany)`
-	 * fallback runs instead.
+	 * `consumeOne` and `incrementOne` are required adapter primitives in Better Auth 1.7 and
+	 * are single-statement compare-and-swaps that must read back the row they mutate. Every
+	 * accepted dialect must therefore guarantee this capability.
 	 */
 	readonly supportsReturning: boolean;
 	escape(identifier: string): string;
@@ -45,11 +42,11 @@ export interface TypeormDialect {
 
 export function resolveDialect(dataSource: TypeormDataSource): TypeormDialect {
 	const driverType = String(dataSource.options.type);
-	if (!VERIFIED_DRIVER_TYPES.has(driverType)) {
+	if (driverType !== VERIFIED_DRIVER_TYPE) {
 		throw new BetterAuthError(
 			`[TypeORM Adapter] Unsupported TypeORM driver "${driverType}". This adapter emits ` +
-				`PostgreSQL grammar directly and is only verified against ` +
-				`${[...VERIFIED_DRIVER_TYPES].join(", ")}. Use one of those drivers, or open an ` +
+				`PostgreSQL grammar directly and is only verified against TypeORM's standard ` +
+				`"${VERIFIED_DRIVER_TYPE}" driver. Use that driver, or open an ` +
 				`issue at https://github.com/nestm-dev/better-auth/issues describing the dialect.`,
 		);
 	}

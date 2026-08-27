@@ -47,7 +47,7 @@ jobs:
       - run: pnpm run test
       - name: Create release PR or publish to npm
         id: changesets
-        uses: changesets/action@v1
+        uses: changesets/action@8488615a623b1b9c987934bb89eae8af6a946ac1 # v2.1.1
         with:
           # With pending changesets: opens/updates the "Version Packages" PR.
           # When that PR is merged (no pending changesets left): publishes to
@@ -55,11 +55,12 @@ jobs:
           # pnpm-workspace.yaml `provenance: true`). The release wrapper keeps
           # prereleases on their Changesets dist tag and creates the GitHub
           # Release from the changelog.
-          publish: pnpm run release
-          version: pnpm changeset version
-          title: "chore: release @nestm/better-auth"
-          commit: "chore: release @nestm/better-auth"
-          createGithubReleases: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          publish-script: pnpm run release
+          version-script: pnpm changeset version
+          pr-title: "chore: release @nestm/better-auth"
+          commit-message: "chore: release @nestm/better-auth"
+          create-github-releases: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # `changeset publish` pushes tags only after a successful npm publish;

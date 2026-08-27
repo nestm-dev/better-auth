@@ -112,7 +112,7 @@ export function typeormAdapter(
 				throw new BetterAuthError(
 					`[TypeORM Adapter] Expected a [rows, rowCount] result from an UPDATE/DELETE but the ` +
 						`driver returned ${Object.prototype.toString.call(raw)}. This adapter is only ` +
-						`verified against TypeORM's PostgreSQL driver.`,
+						`verified against TypeORM's standard "postgres" driver.`,
 				);
 			};
 
@@ -337,11 +337,7 @@ export function typeormAdapter(
 					return affected;
 				},
 
-				options: { adapterId: "typeorm", driverType: dialect.driverType },
-			};
-
-			if (dialect.supportsReturning) {
-				adapter.consumeOne = async ({ model, where }) => {
+				async consumeOne({ model, where }) {
 					const context = contextFor(model);
 					const parameters = new ParameterBag(dialect);
 					const sql =
@@ -351,9 +347,9 @@ export function typeormAdapter(
 
 					const { rows } = await run(sql, parameters.values(), "rowsWithCount");
 					return (rows[0] ?? null) as never;
-				};
+				},
 
-				adapter.incrementOne = async ({ model, where, increment, set }) => {
+				async incrementOne({ model, where, increment, set }) {
 					const context = contextFor(model);
 					const parameters = new ParameterBag(dialect);
 
@@ -385,8 +381,10 @@ export function typeormAdapter(
 
 					const { rows } = await run(sql, parameters.values(), "rowsWithCount");
 					return (rows[0] ?? null) as never;
-				};
-			}
+				},
+
+				options: { adapterId: "typeorm", driverType: dialect.driverType },
+			};
 
 			return adapter;
 		};

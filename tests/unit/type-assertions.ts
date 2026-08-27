@@ -9,6 +9,7 @@ import type {
 	AnyAuth,
 	AuthUser,
 	BetterAuthRequestState,
+	PermissionCheckOptions,
 	RegisteredAuth,
 	UserSession,
 } from "../../src/index.ts";
@@ -49,6 +50,13 @@ const email: string = defaultSession.user.email;
 
 const basePath: string = resolveAuthBasePath(strictAuth);
 
+const permissionCheck: PermissionCheckOptions = { permissions: { user: ["list"] } };
+const arbitraryRoleCheck: PermissionCheckOptions = {
+	permissions: { user: ["list"] },
+	// @ts-expect-error Permission decorators must always evaluate the authenticated caller.
+	role: "admin",
+};
+
 export {
 	asAny,
 	asOptions,
@@ -59,5 +67,7 @@ export {
 	sessionResolved,
 	email,
 	basePath,
+	permissionCheck,
+	arbitraryRoleCheck,
 };
 export type { StrictSession, StrictUser };

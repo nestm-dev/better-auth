@@ -14,28 +14,14 @@
 
 ## Requirements
 
-- **NestJS 12** (`^12.0.0-alpha.5`, on the `next` npm tag) — this package is ESM-only, matching Nest 12's ESM-first direction
+- **NestJS 12** (`^12.0.0`) — this package is ESM-only, matching Nest 12's ESM-first direction
 - **Node >= 22.13** (raised from 22.12 by the optional `typeorm` peer, which declares `^20.19 || ^22.13 || >=24.11`)
-- **better-auth >= 1.6.26 < 1.7.0-0** (the conformance suite runs against stock `1.6.26`)
-
-> **Nest 12 alpha peer-dependency note:** the current `12.0.0-alpha.*` packages still declare
-> `^11.0.0` peers on their own siblings, so plain `npm install` fails with `ERESOLVE`.
-> With **pnpm**, add to `pnpm-workspace.yaml`:
->
-> ```yaml
-> peerDependencyRules:
->   allowedVersions:
->     "@nestjs/common": "12"
->     "@nestjs/core": "12"
->     "@nestjs/platform-express": "12"
-> ```
->
-> With **npm**, use `--legacy-peer-deps` (or `overrides`) until the alphas fix their peers.
+- **better-auth >= 1.7.2 < 1.8.0-0** (the test suite is pinned to `1.7.2`)
 
 ## Install
 
 ```bash
-pnpm add @nestm/better-auth@alpha better-auth@1.6.26
+pnpm add @nestm/better-auth@alpha better-auth@1.7.2
 ```
 
 ## Quick start
@@ -101,6 +87,39 @@ BetterAuthModule.forRootAsync({
 
 `useClass`/`useExisting` are supported via the `BetterAuthOptionsFactory` interface
 (`createBetterAuthOptions()`).
+
+### Microsoft Entra ID and generic OAuth/OIDC
+
+The complete Better Auth handler is mounted, including social-provider and plugin callback
+routes. Microsoft Entra ID can use Better Auth's built-in Microsoft provider:
+
+```ts
+export const auth = betterAuth({
+	socialProviders: {
+		microsoft: {
+			clientId: process.env.MICROSOFT_CLIENT_ID!,
+			clientSecret: process.env.MICROSOFT_CLIENT_SECRET!,
+			tenantId: process.env.MICROSOFT_TENANT_ID ?? "organizations",
+		},
+	},
+});
+```
+
+Register `${BETTER_AUTH_URL}/api/auth/callback/microsoft` as the Entra redirect URI. For a
+generic OAuth/OIDC provider — including Better Auth's `microsoftEntraId()` helper — install the
+`genericOAuth()` plugin; its callback is
+`${BETTER_AUTH_URL}/api/auth/callback/<providerId>`. Keep `trustedOrigins` explicit, and
+do not use Microsoft's mutable `email` or `preferred_username` claims for authorization.
+
+Prefer the built-in `socialProviders.microsoft` integration for Entra: its ID-token path has
+provider-specific JWKS, audience, nonce and tenant validation, and its normal flow supports PKCE.
+The generic helper has a different provider ID (`microsoft-entra-id` instead of `microsoft`), so
+changing an existing deployment between the two requires an account-data and client callback
+migration rather than only a configuration change.
+
+For an arbitrary generic OIDC provider on Better Auth 1.7.2, set `pkce: true` and provide a
+trusted UserInfo-backed `getUserInfo` or perform complete ID-token verification yourself. Do not
+use the plugin's bare ID-token decoding fallback as identity verification.
 
 ### Module options
 
@@ -176,8 +195,8 @@ Notes:
   without an application wrapper guard. Handler-level Better Auth requirements still override a
   class-level foreign marker; a foreign marker placed on the handler itself is explicit and wins.
 - WebSocket gateways need `@UseGuards(BetterAuthGuard)` explicitly (Nest's `APP_GUARD` does
-  not cover gateways). The guard understands http, ws, and rpc contexts; GraphQL is wired but
-  currently **experimental** (the `@nestjs/graphql` v12-compatible stack is not yet stable).
+  not cover gateways). The guard understands http, ws, and rpc contexts; GraphQL support uses
+  the stable `@nestjs/graphql` 14 line but remains experimental in this package.
 
 ### State-changing controller origins
 
@@ -415,7 +434,7 @@ The list API permits one stock Better Auth exact filter at a time:
 `{ field: "role", value: "platform_admin" }` or `{ field: "banned", value: true }`. Role values
 are structurally bounded but deliberately not application-allowlisted; a controller that accepts
 roles from clients must constrain them to its configured admin-plugin roles. Stock Better Auth
-1.6.26 catches adapter failures inside `listUsers` and returns `{ users: [], total: 0 }`, so this
+1.7.2 catches adapter failures inside `listUsers` and returns `{ users: [], total: 0 }`, so this
 facade cannot distinguish that failure from a genuinely empty result. Applications that need an
 availability signal must obtain it from database/adapter health monitoring, not from this page.
 
@@ -429,7 +448,7 @@ longer enforced; malformed expiry data fails closed. The same denial applies whe
 so a public handler never receives that identity as authenticated; a request with no session still
 uses the decorators' normal anonymous behavior.
 
-Better Auth 1.6.26 can retain an old temporary `banExpires` when an expiry-omitted re-ban should
+Better Auth 1.7.2 can retain an old temporary `banExpires` when an expiry-omitted re-ban should
 apply the plugin default. When the facade sees an existing expiry, it first uses the public
 `adminUpdateUser` API to set `{ banned: true, banExpires: null }`, then calls `banUser` to apply the
 requested/plugin-default reason and expiry, all inside one `run("user", ...)` lifecycle. If the
@@ -482,7 +501,7 @@ creates, resends by invitation id, and cancels organization invitations; and lis
 accepts, or rejects the authenticated account's invitations. Returned members always include a
 validated public user projection, and returned invitations are runtime-validated before crossing
 the service boundary. In particular, `updateMemberRole()` re-reads the joined member because stock
-Better Auth 1.6.26 returns a bare member at runtime despite its joined-user response type.
+Better Auth 1.7.2 returns a bare member at runtime despite its joined-user response type.
 
 Stock profile fields cannot make a membership unmanageable. Each returned member's nested `user`
 has `name: string | null`, `email: string | null`, `image: string | null`, and a deterministic
@@ -678,9 +697,9 @@ instead.
 
 ## TypeORM database adapter
 
-A Better Auth database adapter backed by a TypeORM `DataSource`, shipped from the `./typeorm`
-subpath. It exists because no TypeORM adapter exists anywhere else — `@better-auth/typeorm-adapter`
-is a 404 on npm — so a TypeORM application had to keep a second ORM alive purely for auth.
+A PostgreSQL-focused Better Auth database adapter backed by the application's existing TypeORM
+`DataSource`, shipped from the `./typeorm` subpath. Unlike the available community adapters, it
+targets TypeORM 1.1 and implements Better Auth's atomic `consumeOne` and `incrementOne` operations.
 
 ```bash
 pnpm add typeorm  # optional peer, only needed if you use this subpath
@@ -708,9 +727,8 @@ cast or shared-module-path workaround is required.
 
 ### Requirements
 
-- PostgreSQL. The adapter emits SQL directly and is verified against TypeORM's `postgres`,
-  `aurora-postgres` and `cockroachdb` drivers; any other driver is rejected at construction
-  with a message naming it, rather than failing later on the first write.
+- PostgreSQL through TypeORM's standard `postgres` driver. Aurora PostgreSQL, CockroachDB and
+  other drivers are rejected at construction because their raw query-result shapes differ.
 - Entities registered on the `DataSource` for every Better Auth model in use.
 
 ### How models and fields are resolved
@@ -816,12 +834,13 @@ gen_random_uuid()`, express that with `generateId: false`.
 
 ### What the conformance suite proves
 
-`pnpm run test:postgres` runs sign-up/sign-in, session refresh past `updateAge`, email-OTP,
-organization create/invite/accept/list, MCP OAuth register/authorize/token, and database-backed
-rate limiting through **both** adapters, in per-arm Postgres schemas built from one committed
-DDL — then captures all 11 tables and asserts they match column-for-column, including each
-value's JavaScript type. It runs with the process in a non-UTC zone by default, because that is
-the only way the timezone class of bug is visible.
+`pnpm run test:postgres` runs sign-up/sign-in, session refresh past `updateAge`, email-OTP, a
+generic OAuth/OIDC callback with account persistence, organization create/invite/accept/list,
+MCP OAuth register/authorize/token, and database-backed rate limiting through **both** adapters,
+in per-arm Postgres schemas built from one committed DDL — then captures all 11 tables and
+asserts they match column-for-column, including each value's JavaScript type. It runs with the
+process in a non-UTC zone by default, because that is the only way the timezone class of bug is
+visible.
 
 ## Limitations
 
@@ -837,8 +856,8 @@ the only way the timezone class of bug is visible.
   testing modules — are fully supported.
 - On Fastify, responses for auth routes are written to the raw socket — Fastify `onResponse`
   hooks and reply-based logging do not observe them.
-- GraphQL context support is wired but untested against Nest 12 (upstream `@nestjs/graphql`
-  v12 support is still settling) — treat as experimental.
+- GraphQL context support is wired for `@nestjs/graphql` 14 but remains untested here — treat
+  it as experimental.
 - One copy of this package per app: tokens are unique symbols.
 
 ## License
