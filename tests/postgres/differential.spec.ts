@@ -17,7 +17,7 @@ let typeormResult: ScenarioResult;
  *
  * `flows.spec.ts` asserts that each flow does what it should. This asserts that after running
  * the SAME flows against the SAME DDL, the rows the TypeORM adapter left behind are
- * indistinguishable from the ones `@better-auth/drizzle-adapter` left behind — across all 11
+ * indistinguishable from the ones `@better-auth/drizzle-adapter` left behind — across all 16
  * tables, column by column, including each value's JavaScript type.
  *
  * That catches the whole class of bug an adapter's own tests cannot: a column written under
@@ -45,9 +45,10 @@ test("the same tables end up populated, and the same ones end up empty", () => {
 	const populated = (capture: Record<string, unknown[]>) =>
 		AUTH_TABLES.filter((table) => (capture[table]?.length ?? 0) > 0);
 
-	// `verification` is empty because the OTP was CONSUMED — an adapter whose `consumeOne`
-	// silently failed to delete would show a row here. `oauth_consent` stays empty because the
-	// MCP client is first-party, and `rate_limit` because enforcement is off in this scenario
+	// `verification` is empty because both the OTP and authorization code were CONSUMED — an
+	// adapter whose `consumeOne` silently failed to delete would show a row here. MCP 1.7 issues
+	// an audience-bound JWT, so its opaque/refresh-token tables stay empty; client assertions are
+	// not part of this flow. `rate_limit` is empty because enforcement is off in this scenario
 	// (`rate-limit.spec.ts` covers it).
 	expect(populated(typeormCapture)).toEqual([
 		"user",
@@ -56,8 +57,11 @@ test("the same tables end up populated, and the same ones end up empty", () => {
 		"organization",
 		"member",
 		"invitation",
-		"oauth_application",
-		"oauth_access_token",
+		"jwks",
+		"oauth_client",
+		"oauth_resource",
+		"oauth_client_resource",
+		"oauth_consent",
 	]);
 	expect(populated(typeormCapture)).toEqual(populated(drizzleCapture));
 });

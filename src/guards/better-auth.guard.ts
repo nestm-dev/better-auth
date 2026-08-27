@@ -281,15 +281,10 @@ export class BetterAuthGuard implements CanActivate {
 			}
 			const organizationBody =
 				endpoint === "hasPermission" ? { organizationId } : ({} satisfies Record<string, never>);
-			// With an explicit `role`, omit the session headers: better-auth
-			// prefers the session user over `body.role`, which would silently
-			// evaluate the caller's own role instead of the requested one.
-			const input = options.role
-				? {
-						body: { permissions: options.permissions, role: options.role, ...organizationBody },
-					}
-				: { body: { permissions: options.permissions, ...organizationBody }, headers };
-			const result = (await (fn as (input: unknown) => Promise<unknown>)(input)) as {
+			const result = (await (fn as (input: unknown) => Promise<unknown>)({
+				body: { permissions: options.permissions, ...organizationBody },
+				headers,
+			})) as {
 				success?: boolean;
 			} | null;
 			success = result?.success === true;

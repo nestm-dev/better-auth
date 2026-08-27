@@ -1,5 +1,8 @@
+import { createHash } from "node:crypto";
+
 import type { BetterAuthOptions } from "better-auth/types";
-import { emailOTP, mcp, organization } from "better-auth/plugins";
+import { mcp } from "@better-auth/mcp";
+import { emailOTP, genericOAuth, jwt, organization } from "better-auth/plugins";
 
 import type { ArmContext } from "./harness.ts";
 
@@ -17,8 +20,12 @@ export const OTP_EMAIL = "otp@example.com";
 export const OTP_PASSWORD = "otpuser123456";
 export const ORG_SLUG = "conformance-org";
 export const REDIRECT_URI = "https://example.com/callback";
+export const OAUTH_PROVIDER_ID = "conformance-oidc";
+export const OAUTH_ACCOUNT_ID = "conformance-entra-object-id";
+export const OAUTH_EMAIL = "oauth@example.com";
 /** Matches the baseURL `getTestInstance` builds when no port is passed. */
 const BASE_URL = "http://localhost:3000";
+export const MCP_RESOURCE = `${BASE_URL}/mcp`;
 
 /** The session refresh window, in seconds. Short enough that a test can sleep past it. */
 const UPDATE_AGE_SECONDS = 1;
@@ -98,7 +105,42 @@ export function scenarioOptions(): ScenarioOptions {
 					},
 				}),
 				organization(),
-				mcp({ loginPage: "/login" }),
+				genericOAuth({
+					config: [
+						{
+							providerId: OAUTH_PROVIDER_ID,
+							clientId: "conformance-client-id",
+							clientSecret: "conformance-client-secret",
+							authorizationUrl: "https://identity.example.test/oauth2/authorize",
+							tokenUrl: "https://identity.example.test/oauth2/token",
+							scopes: ["openid", "profile", "email"],
+							pkce: true,
+							getToken: async ({ code, codeVerifier }) => {
+								if (code !== "conformance-authorization-code") {
+									throw new Error(`unexpected OAuth authorization code: ${code}`);
+								}
+								if (!codeVerifier) throw new Error("generic OAuth callback lost the PKCE verifier");
+								return {
+									accessToken: "conformance-access-token",
+									refreshToken: "conformance-refresh-token",
+								};
+							},
+							getUserInfo: async () => ({
+								id: OAUTH_ACCOUNT_ID,
+								email: OAUTH_EMAIL,
+								name: "OAuth User",
+								emailVerified: true,
+							}),
+						},
+					],
+				}),
+				jwt(),
+				mcp({
+					loginPage: "/login",
+					consentPage: "/consent",
+					resource: MCP_RESOURCE,
+					allowDynamicClientRegistration: true,
+				}),
 			],
 		},
 	};
@@ -117,6 +159,9 @@ export interface ScenarioResult {
 	refreshedSessionExpiry: number;
 	initialSessionExpiry: number;
 	otpUserId: string;
+	oauthUserId: string;
+	oauthAccountId: string;
+	oauthProviderId: string;
 	organizationId: string;
 	invitationId: string;
 	invitationStatus: string;
@@ -171,6 +216,64 @@ export async function runScenario(
 	if (!code) throw new Error("emailOTP did not deliver a code");
 	const otpSignIn = await api.signInEmailOTP({ body: { email: OTP_EMAIL, otp: code } });
 
+	// --- generic OAuth / OIDC client: authorize callback, account and session ----------------
+	const oauthStart = await auth.handler(
+		new Request(`${BASE_URL}/api/auth/sign-in/social`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				provider: OAUTH_PROVIDER_ID,
+				callbackURL: `${BASE_URL}/dashboard`,
+				disableRedirect: true,
+			}),
+		}),
+	);
+	const oauthStartPayload = (await oauthStart.json()) as { url?: string };
+	if (!oauthStart.ok || !oauthStartPayload.url) {
+		throw new Error(
+			`generic OAuth sign-in failed (${oauthStart.status}): ${JSON.stringify(oauthStartPayload)}`,
+		);
+	}
+	const oauthState = new URL(oauthStartPayload.url).searchParams.get("state");
+	if (!oauthState) throw new Error("generic OAuth sign-in returned no state");
+	const stateCookies = oauthStart.headers
+		.getSetCookie()
+		.map((cookie) => cookie.split(";", 1)[0])
+		.join("; ");
+	if (!stateCookies) throw new Error("generic OAuth sign-in returned no state cookie");
+
+	const oauthCallbackURL = new URL(`${BASE_URL}/api/auth/callback/${OAUTH_PROVIDER_ID}`);
+	oauthCallbackURL.searchParams.set("code", "conformance-authorization-code");
+	oauthCallbackURL.searchParams.set("state", oauthState);
+	const oauthCallback = await auth.handler(
+		new Request(oauthCallbackURL, { headers: { cookie: stateCookies } }),
+	);
+	if (oauthCallback.status !== 302) {
+		throw new Error(
+			`generic OAuth callback failed (${oauthCallback.status}): ${await oauthCallback.text()}`,
+		);
+	}
+	const sessionCookies = oauthCallback.headers
+		.getSetCookie()
+		.map((cookie) => cookie.split(";", 1)[0])
+		.join("; ");
+	if (!sessionCookies) throw new Error("generic OAuth callback returned no session cookie");
+	const oauthSession = await api.getSession({
+		headers: new Headers({ cookie: sessionCookies }),
+	});
+	if (!oauthSession) throw new Error("generic OAuth callback did not create a session");
+	const oauthAccount = await context.auth.db.findOne<{
+		accountId: string;
+		providerId: string;
+	}>({
+		model: "account",
+		where: [
+			{ field: "userId", value: oauthSession.user.id },
+			{ field: "providerId", value: OAUTH_PROVIDER_ID },
+		],
+	});
+	if (!oauthAccount) throw new Error("generic OAuth callback did not persist an account");
+
 	// --- organization: create / invite / accept / list ---------------------------------------
 	const org = await api.createOrganization({
 		body: { name: "Conformance Org", slug: ORG_SLUG },
@@ -223,11 +326,13 @@ export async function runScenario(
 	});
 
 	// --- MCP OAuth: register / authorize / token ---------------------------------------------
+	const registrationHeaders = new Headers(owner.headers);
+	registrationHeaders.set("content-type", "application/json");
 	const registered = await auth
 		.handler(
-			new Request(`${BASE_URL}/api/auth/mcp/register`, {
+			new Request(`${BASE_URL}/api/auth/oauth2/register`, {
 				method: "POST",
-				headers: { "content-type": "application/json" },
+				headers: registrationHeaders,
 				body: JSON.stringify({
 					redirect_uris: [REDIRECT_URI],
 					client_name: "Conformance Client",
@@ -247,36 +352,64 @@ export async function runScenario(
 			return payload as { client_id: string; client_secret: string };
 		});
 
-	// `/mcp/authorize` refuses anything without a real `ctx.request` (it has to re-read the raw
+	// `/oauth2/authorize` refuses anything without a real `ctx.request` (it has to re-read the raw
 	// query string to build the login redirect), so the OAuth leg goes through the HTTP handler
 	// rather than `api.*`. That is also the more faithful exercise: it is the path a real
 	// MCP client takes.
-	const authorizeUrl = new URL(`${BASE_URL}/api/auth/mcp/authorize`);
+	const pkceVerifier = "conformance-pkce-verifier-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+	const pkceChallenge = createHash("sha256").update(pkceVerifier).digest("base64url");
+	const authorizeUrl = new URL(`${BASE_URL}/api/auth/oauth2/authorize`);
 	authorizeUrl.searchParams.set("response_type", "code");
 	authorizeUrl.searchParams.set("client_id", registered.client_id);
 	authorizeUrl.searchParams.set("redirect_uri", REDIRECT_URI);
 	authorizeUrl.searchParams.set("scope", "openid profile");
 	authorizeUrl.searchParams.set("state", "conformance-state");
+	authorizeUrl.searchParams.set("resource", MCP_RESOURCE);
+	authorizeUrl.searchParams.set("code_challenge", pkceChallenge);
+	authorizeUrl.searchParams.set("code_challenge_method", "S256");
 
 	const authorizeResponse = await auth.handler(
 		new Request(authorizeUrl, { headers: owner.headers }),
 	);
-	const location = authorizeResponse.headers.get("location");
-	if (!location) {
+	const consentLocation = authorizeResponse.headers.get("location");
+	if (!consentLocation) {
 		throw new Error(
 			`mcp authorize did not redirect (${authorizeResponse.status}): ${await authorizeResponse.text()}`,
 		);
 	}
-	const authorizationCode = new URL(location).searchParams.get("code");
+	const consentUrl = new URL(consentLocation, BASE_URL);
+	if (consentUrl.pathname !== "/consent") {
+		throw new Error(`mcp authorize did not request consent: ${consentUrl.toString()}`);
+	}
+	const consentHeaders = new Headers(owner.headers);
+	consentHeaders.set("content-type", "application/json");
+	consentHeaders.set("accept", "application/json");
+	const consentResponse = await auth.handler(
+		new Request(`${BASE_URL}/api/auth/oauth2/consent`, {
+			method: "POST",
+			headers: consentHeaders,
+			body: JSON.stringify({
+				accept: true,
+				oauth_query: consentUrl.searchParams.toString(),
+			}),
+		}),
+	);
+	const consentPayload = (await consentResponse.json()) as { url?: string };
+	if (!consentResponse.ok || !consentPayload.url) {
+		throw new Error(
+			`mcp consent failed (${consentResponse.status}): ${JSON.stringify(consentPayload)}`,
+		);
+	}
+	const authorizationCode = new URL(consentPayload.url).searchParams.get("code");
 	if (!authorizationCode) {
 		throw new Error(
-			`mcp authorize returned no code: ${location} (registered=${JSON.stringify(registered)})`,
+			`mcp consent returned no code: ${consentPayload.url} (registered=${JSON.stringify(registered)})`,
 		);
 	}
 
 	const tokenResponse = await auth
 		.handler(
-			new Request(`${BASE_URL}/api/auth/mcp/token`, {
+			new Request(`${BASE_URL}/api/auth/oauth2/token`, {
 				method: "POST",
 				headers: { "content-type": "application/x-www-form-urlencoded" },
 				body: new URLSearchParams({
@@ -285,6 +418,7 @@ export async function runScenario(
 					redirect_uri: REDIRECT_URI,
 					client_id: registered.client_id,
 					client_secret: registered.client_secret,
+					code_verifier: pkceVerifier,
 				}),
 			}),
 		)
@@ -305,6 +439,9 @@ export async function runScenario(
 		initialSessionExpiry,
 		refreshedSessionExpiry,
 		otpUserId: otpSignIn.user.id,
+		oauthUserId: oauthSession.user.id,
+		oauthAccountId: oauthAccount.accountId,
+		oauthProviderId: oauthAccount.providerId,
 		organizationId: org.id,
 		invitationId: invitation.id,
 		invitationStatus: accepted?.invitation.status ?? "missing",

@@ -1,4 +1,14 @@
-import { bigint, boolean, index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import {
+	bigint,
+	boolean,
+	index,
+	integer,
+	jsonb,
+	pgTable,
+	text,
+	timestamp,
+	uniqueIndex,
+} from "drizzle-orm/pg-core";
 
 /**
  * The Drizzle reading of the same `schema.sql`, for the reference arm of the differential.
@@ -40,6 +50,7 @@ export const account = pgTable(
 	"account",
 	{
 		id: text("id").primaryKey(),
+		issuer: text("issuer").notNull(),
 		accountId: text("account_id").notNull(),
 		providerId: text("provider_id").notNull(),
 		userId: text("user_id").notNull(),
@@ -53,7 +64,10 @@ export const account = pgTable(
 		createdAt: timestamp("created_at").defaultNow().notNull(),
 		updatedAt: timestamp("updated_at").notNull(),
 	},
-	(table) => [index("account_userId_idx").on(table.userId)],
+	(table) => [
+		index("account_userId_idx").on(table.userId),
+		uniqueIndex("account_issuer_accountId_uidx").on(table.issuer, table.accountId),
+	],
 );
 
 export const verification = pgTable(
@@ -111,42 +125,151 @@ export const invitation = pgTable(
 	],
 );
 
-export const oauthApplication = pgTable(
-	"oauth_application",
+export const jwks = pgTable("jwks", {
+	id: text("id").primaryKey(),
+	publicKey: text("public_key").notNull(),
+	privateKey: text("private_key").notNull(),
+	createdAt: timestamp("created_at").notNull(),
+	expiresAt: timestamp("expires_at"),
+	alg: text("alg"),
+	crv: text("crv"),
+});
+
+export const oauthClient = pgTable(
+	"oauth_client",
 	{
 		id: text("id").primaryKey(),
-		name: text("name"),
-		icon: text("icon"),
-		metadata: text("metadata"),
-		clientId: text("client_id").unique(),
+		clientId: text("client_id").notNull().unique(),
 		clientSecret: text("client_secret"),
-		redirectUrls: text("redirect_urls"),
-		type: text("type"),
+		clientDiscoveryId: text("client_discovery_id"),
 		disabled: boolean("disabled").default(false),
+		skipConsent: boolean("skip_consent"),
+		enableEndSession: boolean("enable_end_session"),
+		subjectType: text("subject_type"),
+		scopes: jsonb("scopes").$type<string[]>(),
+		clientCredentialsScopes: jsonb("client_credentials_scopes").$type<string[]>().default([]),
 		userId: text("user_id"),
 		createdAt: timestamp("created_at"),
 		updatedAt: timestamp("updated_at"),
+		name: text("name"),
+		uri: text("uri"),
+		icon: text("icon"),
+		contacts: jsonb("contacts").$type<string[]>(),
+		tos: text("tos"),
+		policy: text("policy"),
+		softwareId: text("software_id"),
+		softwareVersion: text("software_version"),
+		softwareStatement: text("software_statement"),
+		redirectUris: jsonb("redirect_uris").$type<string[]>().notNull(),
+		postLogoutRedirectUris: jsonb("post_logout_redirect_uris").$type<string[]>(),
+		backchannelLogoutUri: text("backchannel_logout_uri"),
+		backchannelLogoutSessionRequired: boolean("backchannel_logout_session_required"),
+		tokenEndpointAuthMethod: text("token_endpoint_auth_method"),
+		applicationType: text("application_type"),
+		jwks: text("jwks"),
+		jwksUri: text("jwks_uri"),
+		grantTypes: jsonb("grant_types").$type<string[]>(),
+		responseTypes: jsonb("response_types").$type<string[]>(),
+		requirePKCE: boolean("require_pkce"),
+		dpopBoundAccessTokens: boolean("dpop_bound_access_tokens").default(false),
+		referenceId: text("reference_id"),
+		metadata: jsonb("metadata").$type<Record<string, unknown>>(),
 	},
-	(table) => [index("oauthApplication_userId_idx").on(table.userId)],
+	(table) => [index("oauthClient_userId_idx").on(table.userId)],
+);
+
+export const oauthResource = pgTable("oauth_resource", {
+	id: text("id").primaryKey(),
+	identifier: text("identifier").notNull().unique(),
+	name: text("name").notNull(),
+	accessTokenTtl: integer("access_token_ttl"),
+	refreshTokenTtl: integer("refresh_token_ttl"),
+	signingAlgorithm: text("signing_algorithm"),
+	signingKeyId: text("signing_key_id"),
+	allowedScopes: jsonb("allowed_scopes").$type<string[]>(),
+	customClaims: jsonb("custom_claims").$type<Record<string, unknown>>(),
+	dpopBoundAccessTokensRequired: boolean("dpop_bound_access_tokens_required").default(false),
+	disabled: boolean("disabled").default(false),
+	createdAt: timestamp("created_at"),
+	updatedAt: timestamp("updated_at"),
+	policyVersion: integer("policy_version").default(1),
+	metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+});
+
+export const oauthClientResource = pgTable(
+	"oauth_client_resource",
+	{
+		id: text("id").primaryKey(),
+		clientId: text("client_id").notNull(),
+		resourceId: text("resource_id").notNull(),
+		metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+		createdAt: timestamp("created_at"),
+	},
+	(table) => [
+		index("oauthClientResource_clientId_idx").on(table.clientId),
+		index("oauthClientResource_resourceId_idx").on(table.resourceId),
+		uniqueIndex("oauthClientResource_clientId_resourceId_uidx").on(
+			table.clientId,
+			table.resourceId,
+		),
+	],
+);
+
+export const oauthRefreshToken = pgTable(
+	"oauth_refresh_token",
+	{
+		id: text("id").primaryKey(),
+		token: text("token").notNull().unique(),
+		clientId: text("client_id").notNull(),
+		sessionId: text("session_id"),
+		userId: text("user_id").notNull(),
+		referenceId: text("reference_id"),
+		authorizationCodeId: text("authorization_code_id"),
+		resources: jsonb("resources").$type<string[]>(),
+		requestedUserInfoClaims: jsonb("requested_user_info_claims").$type<string[]>(),
+		expiresAt: timestamp("expires_at").notNull(),
+		createdAt: timestamp("created_at").notNull(),
+		revoked: timestamp("revoked"),
+		rotatedAt: timestamp("rotated_at"),
+		rotationReplayResponse: text("rotation_replay_response"),
+		rotationReplayExpiresAt: timestamp("rotation_replay_expires_at"),
+		authTime: timestamp("auth_time"),
+		confirmation: jsonb("confirmation").$type<Record<string, unknown>>(),
+		scopes: jsonb("scopes").$type<string[]>().notNull(),
+	},
+	(table) => [
+		index("oauthRefreshToken_clientId_idx").on(table.clientId),
+		index("oauthRefreshToken_sessionId_idx").on(table.sessionId),
+		index("oauthRefreshToken_userId_idx").on(table.userId),
+		index("oauthRefreshToken_authorizationCodeId_idx").on(table.authorizationCodeId),
+	],
 );
 
 export const oauthAccessToken = pgTable(
 	"oauth_access_token",
 	{
 		id: text("id").primaryKey(),
-		accessToken: text("access_token").unique(),
-		refreshToken: text("refresh_token").unique(),
-		accessTokenExpiresAt: timestamp("access_token_expires_at"),
-		refreshTokenExpiresAt: timestamp("refresh_token_expires_at"),
-		clientId: text("client_id"),
+		token: text("token").notNull().unique(),
+		clientId: text("client_id").notNull(),
+		sessionId: text("session_id"),
 		userId: text("user_id"),
-		scopes: text("scopes"),
-		createdAt: timestamp("created_at"),
-		updatedAt: timestamp("updated_at"),
+		referenceId: text("reference_id"),
+		authorizationCodeId: text("authorization_code_id"),
+		resources: jsonb("resources").$type<string[]>(),
+		requestedUserInfoClaims: jsonb("requested_user_info_claims").$type<string[]>(),
+		refreshId: text("refresh_id"),
+		expiresAt: timestamp("expires_at").notNull(),
+		createdAt: timestamp("created_at").notNull(),
+		revoked: timestamp("revoked"),
+		confirmation: jsonb("confirmation").$type<Record<string, unknown>>(),
+		scopes: jsonb("scopes").$type<string[]>().notNull(),
 	},
 	(table) => [
 		index("oauthAccessToken_clientId_idx").on(table.clientId),
+		index("oauthAccessToken_sessionId_idx").on(table.sessionId),
 		index("oauthAccessToken_userId_idx").on(table.userId),
+		index("oauthAccessToken_authorizationCodeId_idx").on(table.authorizationCodeId),
+		index("oauthAccessToken_refreshId_idx").on(table.refreshId),
 	],
 );
 
@@ -154,18 +277,25 @@ export const oauthConsent = pgTable(
 	"oauth_consent",
 	{
 		id: text("id").primaryKey(),
-		clientId: text("client_id"),
+		clientId: text("client_id").notNull(),
 		userId: text("user_id"),
-		scopes: text("scopes"),
-		createdAt: timestamp("created_at"),
-		updatedAt: timestamp("updated_at"),
-		consentGiven: boolean("consent_given"),
+		referenceId: text("reference_id"),
+		resources: jsonb("resources").$type<string[]>(),
+		requestedUserInfoClaims: jsonb("requested_user_info_claims").$type<string[]>(),
+		scopes: jsonb("scopes").$type<string[]>().notNull(),
+		createdAt: timestamp("created_at").notNull(),
+		updatedAt: timestamp("updated_at").notNull(),
 	},
 	(table) => [
 		index("oauthConsent_clientId_idx").on(table.clientId),
 		index("oauthConsent_userId_idx").on(table.userId),
 	],
 );
+
+export const oauthClientAssertion = pgTable("oauth_client_assertion", {
+	id: text("id").primaryKey(),
+	expiresAt: timestamp("expires_at").notNull(),
+});
 
 export const rateLimit = pgTable("rate_limit", {
 	id: text("id").primaryKey(),
@@ -182,8 +312,13 @@ export const drizzleSchema = {
 	organization,
 	member,
 	invitation,
-	oauthApplication,
+	jwks,
+	oauthClient,
+	oauthResource,
+	oauthClientResource,
+	oauthRefreshToken,
 	oauthAccessToken,
 	oauthConsent,
+	oauthClientAssertion,
 	rateLimit,
 };

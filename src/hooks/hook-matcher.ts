@@ -20,7 +20,16 @@ function compileStringPattern(pattern: string): (path: string) => boolean {
 export function compileHookMatcher(path?: HookPathMatcher): CompiledHookMatcher {
 	if (path === undefined) return () => true;
 	if (typeof path === "function") return path;
-	if (path instanceof RegExp) return (ctx) => path.test(ctx.path);
+	if (path instanceof RegExp) {
+		return (ctx) => {
+			path.lastIndex = 0;
+			try {
+				return path.test(ctx.path);
+			} finally {
+				path.lastIndex = 0;
+			}
+		};
+	}
 	const patterns = (Array.isArray(path) ? path : [path]).map((p) =>
 		compileStringPattern(p as string),
 	);

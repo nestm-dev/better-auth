@@ -32,12 +32,12 @@ Auth's field names are camelCase and the columns are not.
 
 | File                                | What it establishes                                                                    |
 | ----------------------------------- | -------------------------------------------------------------------------------------- |
-| `schema.sql`                        | The 11 auth tables. The fixed point both arms run against.                             |
+| `schema.sql`                        | The 16 auth tables. The fixed point both arms run against.                             |
 | `entities.ts` / `drizzle-schema.ts` | The two ORMs' readings of that DDL.                                                    |
 | `harness.ts`                        | Per-arm schema provisioning, a **neutral** reader, table capture and normalisation.    |
 | `scenario.ts`                       | Every flow, in one deterministic order, driven through Better Auth's public API.       |
 | `flows.spec.ts`                     | Each flow behaves correctly — on both arms.                                            |
-| `differential.spec.ts`              | After the same flows, all 11 tables are identical across both arms.                    |
+| `differential.spec.ts`              | After the same flows, all 16 tables are identical across both arms.                    |
 | `atomicity.spec.ts`                 | 32-way concurrency on `consumeOne` and `incrementOne`.                                 |
 | `timezone.spec.ts`                  | UTC instants round-trip in four process zones, with a counter-proof.                   |
 | `rate-limit.spec.ts`                | The database rate limiter, the only production caller of `incrementOne`.               |

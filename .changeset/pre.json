@@ -1,23 +1,4 @@
 {
   "mode": "pre",
-  "tag": "alpha",
-  "initialVersions": {
-    "@nestm/better-auth": "0.1.0-alpha.0"
-  },
-  "changesets": [
-    "bright-auth-types",
-    "calm-request-state",
-    "clever-policies-compose",
-    "initial-release",
-    "join-application-transactions",
-    "nest-api-invocation",
-    "portable-typeorm-capabilities",
-    "public-metadata-interop",
-    "quiet-routes-decide",
-    "safe-platform-user-management",
-    "safe-session-management",
-    "stock-organization-control-plane",
-    "strict-mutation-origins",
-    "typeorm-database-adapter"
-  ]
+  "tag": "alpha"
 }
