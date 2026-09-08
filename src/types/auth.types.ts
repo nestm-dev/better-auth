@@ -63,6 +63,8 @@ export type AuthUser<TAuth extends AnyAuth = RegisteredAuth> = UserSession<TAuth
 
 /** Request fields populated by `BetterAuthGuard`, including the resolved-session marker. */
 export interface BetterAuthRequestState<TAuth extends AnyAuth = RegisteredAuth> {
+	/** Request selection only. Membership and resource authorization remain required. */
+	resolvedOrganizationId?: string | null;
 	session?: UserSession<TAuth> | null;
 	user?: AuthUser<TAuth> | null;
 	[SESSION_RESOLVED]?: boolean;

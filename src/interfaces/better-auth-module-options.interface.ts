@@ -1,3 +1,4 @@
+import type { BetterAuthOrganizationResolver } from "./better-auth-organization-resolver.interface.ts";
 import type { BetterAuthOptions } from "better-auth";
 import type { AnyAuth } from "../types/auth.types.ts";
 import type { BetterAuthRoutePolicy } from "../policies/route-policy.ts";
@@ -44,6 +45,8 @@ export interface BetterAuthInteropOptions {
 }
 
 interface BetterAuthModuleCommonOptions {
+	/** When configured, an absent result never falls back to the session selector. */
+	organizationResolver?: BetterAuthOrganizationResolver;
 	/**
 	 * Overrides the mount path. When omitted it is resolved from the auth
 	 * config the same way better-auth itself does: a path inside `baseURL`

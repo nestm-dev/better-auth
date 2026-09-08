@@ -53,6 +53,11 @@ export {
 	type BetterAuthRoutePolicyResult,
 } from "./policies/route-policy.ts";
 
+export type {
+	BetterAuthOrganizationResolver,
+	BetterAuthOrganizationResolutionContext,
+} from "./interfaces/better-auth-organization-resolver.interface.ts";
+
 // Types
 export {
 	defineBetterAuthOptions,

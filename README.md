@@ -863,3 +863,16 @@ visible.
 ## License
 
 BSD-3-Clause © nestm
+
+### Request-specific organization selection
+
+Applications that allow different organizations in different browser tabs can configure
+`organizationResolver: { resolve: ({ request, context }) => organizationId }` in
+`BetterAuthModule.forRoot` or `forRootAsync`. The resolver runs after authentication;
+its result is available as `request.resolvedOrganizationId`. Validate route input in the
+application resolver. Selection is not authority: organization role/permission guards
+still check live membership, and downstream tenant/resource authorization is required.
+
+When configured, returning `null` or `undefined` leaves the request without an organization;
+it never falls back to `session.activeOrganizationId`. The guard does not modify the
+session. Without a resolver, existing session-based selection remains the default.
