@@ -157,7 +157,17 @@ export class BetterAuthGuard implements CanActivate {
 		const orgRoles = this.reflector.getAllAndOverride(OrgRoles, targets);
 		const requireActiveOrg =
 			this.reflector.getAllAndOverride(RequireActiveOrg, targets) === true || !!orgRoles;
-		const activeOrganizationId = session.session?.activeOrganizationId;
+		const selectedOrganizationId = this.options?.organizationResolver
+			? await this.options.organizationResolver.resolve({ request, context })
+			: session.session?.activeOrganizationId;
+		if (
+			selectedOrganizationId != null &&
+			(typeof selectedOrganizationId !== "string" || selectedOrganizationId.trim().length === 0)
+		) {
+			throw await createAuthError(kind, "FORBIDDEN", "Invalid organization selection");
+		}
+		const activeOrganizationId = selectedOrganizationId ?? undefined;
+		if (request) request.resolvedOrganizationId = activeOrganizationId ?? null;
 		let activeMemberRole: string | string[] | null | undefined;
 		if (requireActiveOrg) {
 			if (!activeOrganizationId) {
@@ -192,7 +202,7 @@ export class BetterAuthGuard implements CanActivate {
 				headers,
 				memberPermission,
 				"hasPermission",
-				session.session?.activeOrganizationId,
+				activeOrganizationId,
 			);
 		}
 
@@ -277,7 +287,7 @@ export class BetterAuthGuard implements CanActivate {
 		let success = false;
 		try {
 			if (endpoint === "hasPermission" && !organizationId) {
-				throw new Error("The authoritative session has no active organization.");
+				throw new Error("The request has no selected organization.");
 			}
 			const organizationBody =
 				endpoint === "hasPermission" ? { organizationId } : ({} satisfies Record<string, never>);
