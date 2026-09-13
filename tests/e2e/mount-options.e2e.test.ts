@@ -8,6 +8,7 @@ import { createTestAuth } from "../shared/test-auth.ts";
 import { createTestApp } from "../shared/test-app.ts";
 import { signUpUser } from "../shared/auth-client.ts";
 import { testHttpAdapter } from "../shared/http-adapter.ts";
+import { ServerResponse } from "node:http";
 
 describe(`mount options (${testHttpAdapter})`, () => {
 	let app: INestApplication;
@@ -45,6 +46,55 @@ describe(`mount options (${testHttpAdapter})`, () => {
 			.post("/api/auth/sign-up/email")
 			.send({ email: "x@example.com", password: "super-secure-password", name: "X" });
 		expect(response.status).toBe(500);
+	});
+
+	it("keeps auth headers and body private until the middleware finishes", async () => {
+		let headersSentBeforeCommit: boolean | undefined;
+		app = await createTestApp({
+			forRoot: {
+				auth: createTestAuth(),
+				middleware: async (_req, res, run) => {
+					await run();
+					headersSentBeforeCommit = nodeResponse(res).headersSent;
+				},
+			},
+		});
+		const user = await signUpUser(app);
+		expect(user.token).toBeTruthy();
+		expect(headersSentBeforeCommit).toBe(false);
+	});
+
+	it("withholds session cookies and success when middleware fails after the handler", async () => {
+		app = await createTestApp({
+			forRoot: {
+				auth: createTestAuth(),
+				middleware: async (_req, _res, run) => {
+					await run();
+					throw new Error("transaction commit failed");
+				},
+			},
+		});
+		const response = await request(app.getHttpServer())
+			.post("/api/auth/sign-up/email")
+			.send({ email: "commit@example.com", password: "super-secure-password", name: "Commit" });
+		expect(response.status).toBe(500);
+		expect(response.headers["set-cookie"]).toBeUndefined();
+	});
+
+	it("preserves middleware that answers the request without invoking the handler", async () => {
+		app = await createTestApp({
+			forRoot: {
+				auth: createTestAuth(),
+				middleware: (_req, res) => {
+					const response = nodeResponse(res);
+					response.statusCode = 403;
+					response.end("Denied");
+				},
+			},
+		});
+		const response = await request(app.getHttpServer()).get("/api/auth/get-session");
+		expect(response.status).toBe(403);
+		expect(response.text).toBe("Denied");
 	});
 
 	it("initializes without an HTTP adapter (application context) with a warning, not a crash", async () => {
@@ -89,3 +139,15 @@ describe(`mount options (${testHttpAdapter})`, () => {
 		expect(app.get(DynamicTracker).events).toEqual(["fired"]);
 	});
 });
+
+function nodeResponse(value: unknown): ServerResponse {
+	if (value instanceof ServerResponse) return value;
+	if (
+		typeof value === "object" &&
+		value !== null &&
+		"raw" in value &&
+		value.raw instanceof ServerResponse
+	)
+		return value.raw;
+	throw new Error("Expected a Node response");
+}
