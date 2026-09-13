@@ -14,6 +14,9 @@ importers:
       '@nestjs/graphql':
         specifier: ^14.0.0
         version: 14.0.0(@nestjs/common@12.0.1(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0))(@nestjs/core@12.0.1)(graphql@16.14.2)(reflect-metadata@0.2.2)
+      better-call:
+        specifier: 1.4.0
+        version: 1.4.0(zod@4.4.3)
     devDependencies:
       '@better-auth/drizzle-adapter':
         specifier: 1.7.2

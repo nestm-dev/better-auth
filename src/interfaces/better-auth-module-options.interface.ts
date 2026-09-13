@@ -27,6 +27,8 @@ export interface BetterAuthCorsOptions {
  * Wrapper invoked around the better-auth handler for every auth request.
  * Escape hatch for request-context libraries (MikroORM `RequestContext`,
  * AsyncLocalStorage setups, ...). Call `run()` to execute the handler.
+ * Auth response headers and body are sent only after the wrapper resolves,
+ * allowing it to commit a transaction before publishing session cookies.
  */
 export type BetterAuthRequestMiddleware = (
 	request: unknown,

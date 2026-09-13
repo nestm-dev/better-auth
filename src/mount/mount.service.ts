@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
 import { HttpAdapterHost } from "@nestjs/core";
 import { toNodeHandler } from "better-auth/node";
+import { getRequest, setResponse } from "better-call/node";
 import {
 	BETTER_AUTH_BASE_PATH,
 	BETTER_AUTH_INSTANCE,
@@ -130,8 +131,24 @@ export class BetterAuthMountService {
 					} else {
 						recoverBody(req, nodeReq);
 					}
-					const run = () => handler(nodeReq, nodeRes);
-					await (wrap ? wrap(req, res, run) : run());
+					if (!wrap) {
+						await handler(nodeReq, nodeRes);
+						return;
+					}
+					let response: Response | undefined;
+					await wrap(req, res, async () => {
+						const protocol =
+							nodeReq.headers["x-forwarded-proto"] ||
+							("encrypted" in nodeReq.socket && nodeReq.socket.encrypted ? "https" : "http");
+						response = await this.auth.handler(
+							getRequest({
+								base: `${String(protocol)}://${String(nodeReq.headers[":authority"] || nodeReq.headers.host)}`,
+								request: nodeReq,
+							}),
+						);
+					});
+					// Transaction wrappers must commit before success or cookies become visible.
+					if (response !== undefined) await setResponse(nodeRes, response);
 				};
 				void execute().catch((error: unknown) => next(error));
 			},
