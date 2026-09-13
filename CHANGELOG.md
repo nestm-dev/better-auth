@@ -1,5 +1,11 @@
 # @nestm/better-auth
 
+## 0.1.0-alpha.11
+
+### Patch Changes
+
+- fd096c2: Send auth responses only after request middleware finishes, so transaction wrappers commit before session cookies and successful status codes become visible. Preserve request conversion, streaming response delivery, and middleware short-circuits.
+
 ## 0.1.0-alpha.10
 
 ### Minor Changes
